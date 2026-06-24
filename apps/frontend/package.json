@@ -11,7 +11,7 @@
   "dependencies": {
     "axios": "^1.18.1",
     "dompurify": "^3.4.11",
-    "marked": "^16.3.0",
+    "marked": "^18.0.5",
     "pinia": "^3.0.3",
     "pinia-plugin-persistedstate": "^4.5.0",
     "vant": "^4.9.21",
