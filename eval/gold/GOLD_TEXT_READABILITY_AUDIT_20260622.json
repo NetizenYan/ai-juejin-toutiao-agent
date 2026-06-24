@@ -1,0 +1,13 @@
+{
+  "ok": true,
+  "row_count": 80,
+  "fallback_row_count": 80,
+  "rows_with_text": 80,
+  "rows_with_cjk": 80,
+  "rows_without_text": 0,
+  "rows_without_cjk": 0,
+  "replacement_char_rows": 0,
+  "ascii_question_mark_rows": 0,
+  "mojibake_suspect_rows": 0,
+  "problem_rows": []
+}

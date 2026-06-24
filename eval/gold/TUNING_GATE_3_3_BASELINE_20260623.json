@@ -1,0 +1,22 @@
+{
+  "generated_at": "2026-06-23",
+  "stage": "3.3_expanded_gold_baseline",
+  "checker": "scripts/check_gold_tuning_gate.py",
+  "inputs": {
+    "coverage": "eval/gold/GOLD_EXPANSION_COVERAGE_EXPANDED115_20260623.json",
+    "train_split": "eval/gold/splits/retrieval_train_202606.jsonl",
+    "heldout_split": "eval/gold/splits/retrieval_heldout_202606.jsonl",
+    "train_report": "eval/reports/3_3/train80_baseline_3_2E_current.json",
+    "heldout_report": "eval/reports/3_3/heldout35_baseline_3_2E_current.json"
+  },
+  "result": {
+    "ok": true,
+    "formal_count": 115,
+    "train_count": 80,
+    "heldout_count": 35,
+    "blockers": []
+  },
+  "automatic_tuning_started": false,
+  "tuning_script_created": false,
+  "retrieval_code_modified": false
+}

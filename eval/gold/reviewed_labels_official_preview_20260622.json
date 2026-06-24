@@ -1,0 +1,16 @@
+{
+  "preview_only": true,
+  "row_count": 80,
+  "decision_counts": {
+    "accept_as_gold": 65,
+    "merge_with_existing": 15,
+    "needs_evidence_lookup": 0,
+    "reject": 0
+  },
+  "accepted_count": 65,
+  "merge_count": 15,
+  "source_path": "eval\\gold\\reviewed_labels_draft_20260622.jsonl",
+  "output_path": "eval\\gold\\reviewed_labels_official_preview_20260622.jsonl",
+  "summary_path": "eval\\gold\\reviewed_labels_official_preview_20260622.json",
+  "report_path": "eval\\gold\\REVIEWED_LABELS_OFFICIAL_PREVIEW_20260622.md"
+}

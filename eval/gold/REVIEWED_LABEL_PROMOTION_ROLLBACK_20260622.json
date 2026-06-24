@@ -1,0 +1,33 @@
+{
+  "rolled_back": false,
+  "confirmation_token": "mismatch",
+  "apply_report_path": "eval\\gold\\REVIEWED_LABEL_PROMOTION_APPLY_20260622.json",
+  "apply_backup": null,
+  "official_before": {
+    "path": "eval\\gold\\reviewed_labels_20260622.jsonl",
+    "exists": true,
+    "bytes": 1,
+    "sha256": "01ba4719c80b6fe911b091a7c05124b64eeece964e09c058ef8f9805daca546b",
+    "row_count": 0,
+    "parse_error": null
+  },
+  "official_after": {
+    "path": "eval\\gold\\reviewed_labels_20260622.jsonl",
+    "exists": true,
+    "bytes": 1,
+    "sha256": "01ba4719c80b6fe911b091a7c05124b64eeece964e09c058ef8f9805daca546b",
+    "row_count": 0,
+    "parse_error": null
+  },
+  "current_backup": {
+    "created": false,
+    "path": null,
+    "sha256": null
+  },
+  "blockers": [
+    "confirmation token mismatch",
+    "apply report was not applied",
+    "apply report has no created backup",
+    "apply report backup path is missing"
+  ]
+}

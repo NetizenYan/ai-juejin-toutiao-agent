@@ -1,0 +1,340 @@
+{
+  "apply_ready": true,
+  "checks": {
+    "preview_validation_ok": true,
+    "conditional_approval_ok": true,
+    "manual_transaction_ready": true,
+    "sandbox_simulation_applied": true,
+    "sandbox_ready_for_gold_expansion": true,
+    "real_official_unchanged": true,
+    "tune_script_absent": true,
+    "official_train_split_absent": true,
+    "official_heldout_split_absent": true,
+    "sentence_transformers_absent": true
+  },
+  "validation": {
+    "ok": true,
+    "row_count": 80,
+    "accepted_count": 65,
+    "rejected_count": 0,
+    "errors": []
+  },
+  "conditional_approval": {
+    "ok": true,
+    "row_count": 80,
+    "checked_counts": {
+      "B_context_follow_up": 14,
+      "C_time_sensitive": 9,
+      "E_multi_document": 8,
+      "G_no_answer": 4,
+      "H_investment_boundary": 4
+    },
+    "date_checks": [
+      {
+        "candidate_id": "candidate_time_recent_008",
+        "evidence_id": "news:jjrb:139aa3760c02aada",
+        "window": "2026年6月上旬",
+        "publish_date": "2026-06-07",
+        "ok": true
+      },
+      {
+        "candidate_id": "candidate_time_recent_009",
+        "evidence_id": "news:jjrb:c1ec8dba59f743ab",
+        "window": "2026年6月上旬",
+        "publish_date": "2026-06-05",
+        "ok": true
+      },
+      {
+        "candidate_id": "candidate_time_recent_010",
+        "evidence_id": "news:jjrb:d1ff128e2ba01cd3",
+        "window": "2026年6月初",
+        "publish_date": "2026-06-04",
+        "ok": true
+      },
+      {
+        "candidate_id": "candidate_time_recent_011",
+        "evidence_id": "news:jjrb:234d66fbdeb07f7c",
+        "window": "2026年5月下旬",
+        "publish_date": "2026-05-21",
+        "ok": true
+      },
+      {
+        "candidate_id": "candidate_time_recent_012",
+        "evidence_id": "news:jjrb:821d33acb1cdfaf4",
+        "window": "2026年5月下旬",
+        "publish_date": "2026-05-27",
+        "ok": true
+      },
+      {
+        "candidate_id": "candidate_time_recent_013",
+        "evidence_id": "news:jjrb:ac7e8fcf5dfa6a03",
+        "window": "2026年6月初",
+        "publish_date": "2026-06-02",
+        "ok": true
+      },
+      {
+        "candidate_id": "candidate_time_recent_014",
+        "evidence_id": "news:jjrb:543874085db2b6c0",
+        "window": "2026年5月中旬",
+        "publish_date": "2026-05-20",
+        "ok": true
+      },
+      {
+        "candidate_id": "candidate_time_replacement_015",
+        "evidence_id": "news:jjrb:99534f0b518888e0",
+        "window": "2026年6月上旬",
+        "publish_date": "2026-06-01",
+        "ok": true
+      },
+      {
+        "candidate_id": "candidate_time_replacement_016",
+        "evidence_id": "news:jjrb:06a9d97492dd5d69",
+        "window": "2026年6月上旬",
+        "publish_date": "2026-06-08",
+        "ok": true
+      }
+    ],
+    "split_policy": "group_by_evidence_or_parent_news_id",
+    "errors": [],
+    "warnings": []
+  },
+  "promotion_plan": {
+    "dry_run_only": true,
+    "manual_transaction_ready": true,
+    "preview": {
+      "path": "eval\\gold\\reviewed_labels_official_preview_20260622.jsonl",
+      "exists": true,
+      "bytes": 41177,
+      "sha256": "17ac5562dcdb68457e778a3682d4c41c3689ce54697633d5cc8abb9087218376",
+      "row_count": 80,
+      "decision_counts": {
+        "accept_as_gold": 65,
+        "merge_with_existing": 15,
+        "needs_evidence_lookup": 0,
+        "reject": 0
+      }
+    },
+    "official": {
+      "path": "eval\\gold\\reviewed_labels_20260622.jsonl",
+      "exists": true,
+      "bytes": 1,
+      "sha256": "01ba4719c80b6fe911b091a7c05124b64eeece964e09c058ef8f9805daca546b",
+      "row_count": 0,
+      "decision_counts": {
+        "accept_as_gold": 0,
+        "merge_with_existing": 0,
+        "needs_evidence_lookup": 0,
+        "reject": 0
+      }
+    },
+    "blockers": [],
+    "warnings": [],
+    "actions": [
+      "manual confirmation required before copying the preview into the official reviewed-label file",
+      "validate the preview against the gray candidate source",
+      "back up the current official reviewed-label file and record its hash",
+      "after human approval only, copy the preview file content into the official reviewed-label file",
+      "rerun reviewed-label validation, coverage, promotion audit, split preview, and the tuning gate check",
+      "keep automatic tuning closed until official train/held-out splits and baseline reports exist"
+    ]
+  },
+  "sandbox": {
+    "sandbox_only": true,
+    "simulation_applied": true,
+    "real_official_unchanged": true,
+    "real_official_before": {
+      "path": "eval\\gold\\reviewed_labels_20260622.jsonl",
+      "exists": true,
+      "bytes": 1,
+      "sha256": "01ba4719c80b6fe911b091a7c05124b64eeece964e09c058ef8f9805daca546b",
+      "row_count": 0
+    },
+    "real_official_after": {
+      "path": "eval\\gold\\reviewed_labels_20260622.jsonl",
+      "exists": true,
+      "bytes": 1,
+      "sha256": "01ba4719c80b6fe911b091a7c05124b64eeece964e09c058ef8f9805daca546b",
+      "row_count": 0
+    },
+    "sandbox_official": {
+      "path": "eval\\gold\\sandbox\\apply_preflight_20260622\\reviewed_labels_20260622.sandbox.jsonl",
+      "exists": true,
+      "bytes": 41177,
+      "sha256": "17ac5562dcdb68457e778a3682d4c41c3689ce54697633d5cc8abb9087218376",
+      "row_count": 80
+    },
+    "apply_result": {
+      "applied": true,
+      "confirmation_token": "matched",
+      "preview": {
+        "path": "eval\\gold\\reviewed_labels_official_preview_20260622.jsonl",
+        "exists": true,
+        "bytes": 41177,
+        "sha256": "17ac5562dcdb68457e778a3682d4c41c3689ce54697633d5cc8abb9087218376",
+        "row_count": 80
+      },
+      "official_before": {
+        "path": "eval\\gold\\sandbox\\apply_preflight_20260622\\reviewed_labels_20260622.sandbox.jsonl",
+        "exists": true,
+        "bytes": 1,
+        "sha256": "01ba4719c80b6fe911b091a7c05124b64eeece964e09c058ef8f9805daca546b",
+        "row_count": 0
+      },
+      "official_after": {
+        "path": "eval\\gold\\sandbox\\apply_preflight_20260622\\reviewed_labels_20260622.sandbox.jsonl",
+        "exists": true,
+        "bytes": 41177,
+        "sha256": "17ac5562dcdb68457e778a3682d4c41c3689ce54697633d5cc8abb9087218376",
+        "row_count": 80
+      },
+      "backup": {
+        "created": true,
+        "path": "eval\\gold\\sandbox\\apply_preflight_20260622\\backups\\reviewed_labels_20260622.sandbox.backup_before_promotion_20260623_095133.jsonl",
+        "sha256": "01ba4719c80b6fe911b091a7c05124b64eeece964e09c058ef8f9805daca546b"
+      },
+      "validation": {
+        "ok": true,
+        "row_count": 80,
+        "accepted_count": 65,
+        "rejected_count": 0,
+        "errors": []
+      },
+      "blockers": [],
+      "warnings": []
+    },
+    "pipeline_state": {
+      "reviewed_label_stage": "reviewed_labels_ready_for_gold_expansion",
+      "reviewed_labels_ready_for_gold_expansion": true,
+      "official": {
+        "path": "eval\\gold\\sandbox\\apply_preflight_20260622\\reviewed_labels_20260622.sandbox.jsonl",
+        "exists": true,
+        "bytes": 41177,
+        "sha256": "17ac5562dcdb68457e778a3682d4c41c3689ce54697633d5cc8abb9087218376",
+        "row_count": 80,
+        "decision_counts": {
+          "accept_as_gold": 65,
+          "merge_with_existing": 15,
+          "needs_evidence_lookup": 0,
+          "reject": 0
+        }
+      },
+      "preview": {
+        "path": "eval\\gold\\reviewed_labels_official_preview_20260622.jsonl",
+        "exists": true,
+        "bytes": 41177,
+        "sha256": "17ac5562dcdb68457e778a3682d4c41c3689ce54697633d5cc8abb9087218376",
+        "row_count": 80,
+        "decision_counts": {
+          "accept_as_gold": 65,
+          "merge_with_existing": 15,
+          "needs_evidence_lookup": 0,
+          "reject": 0
+        }
+      },
+      "validation": {
+        "ok": true,
+        "row_count": 80,
+        "accepted_count": 65,
+        "rejected_count": 0,
+        "errors": []
+      },
+      "coverage": {
+        "formal_count": 50,
+        "label_count": 80,
+        "accepted_count": 65,
+        "merge_count": 15,
+        "needs_lookup_count": 0,
+        "rejected_count": 0,
+        "projected_formal_count": 115,
+        "target_total": 100,
+        "formal_counts": {
+          "A_exact_news_qa": 6,
+          "B_context_follow_up": 6,
+          "C_time_sensitive": 6,
+          "D_source_limited": 7,
+          "E_multi_document": 7,
+          "F_similar_distractor": 6,
+          "G_no_answer": 6,
+          "H_investment_boundary": 6
+        },
+        "accepted_counts": {
+          "A_exact_news_qa": 14,
+          "B_context_follow_up": 14,
+          "C_time_sensitive": 9,
+          "D_source_limited": 8,
+          "E_multi_document": 8,
+          "F_similar_distractor": 4,
+          "G_no_answer": 4,
+          "H_investment_boundary": 4
+        },
+        "merge_counts": {
+          "A_exact_news_qa": 1,
+          "B_context_follow_up": 6,
+          "C_time_sensitive": 2,
+          "D_source_limited": 1,
+          "E_multi_document": 3,
+          "F_similar_distractor": 1,
+          "G_no_answer": 1,
+          "H_investment_boundary": 0
+        },
+        "projected_counts_after_accepts": {
+          "A_exact_news_qa": 20,
+          "B_context_follow_up": 20,
+          "C_time_sensitive": 15,
+          "D_source_limited": 15,
+          "E_multi_document": 15,
+          "F_similar_distractor": 10,
+          "G_no_answer": 10,
+          "H_investment_boundary": 10
+        },
+        "deficits_after_accepts": {
+          "A_exact_news_qa": 0,
+          "B_context_follow_up": 0,
+          "C_time_sensitive": 0,
+          "D_source_limited": 0,
+          "E_multi_document": 0,
+          "F_similar_distractor": 0,
+          "G_no_answer": 0,
+          "H_investment_boundary": 0
+        },
+        "blockers": []
+      },
+      "automatic_tuning_gate": {
+        "ok": false,
+        "formal_count": 50,
+        "train_count": 0,
+        "heldout_count": 0,
+        "blockers": [
+          "formal gold count 50 is below 100",
+          "A_exact_news_qa has 6 formal cases, below 10",
+          "B_context_follow_up has 6 formal cases, below 10",
+          "C_time_sensitive has 6 formal cases, below 10",
+          "D_source_limited has 7 formal cases, below 10",
+          "E_multi_document has 7 formal cases, below 10",
+          "F_similar_distractor has 6 formal cases, below 10",
+          "G_no_answer has 6 formal cases, below 10",
+          "H_investment_boundary has 6 formal cases, below 10",
+          "train split is missing",
+          "held-out split is missing",
+          "train baseline report is missing",
+          "held-out baseline report is missing"
+        ]
+      },
+      "blockers": [],
+      "warnings": [],
+      "next_actions": [
+        "build the expanded gold preview from official reviewed labels",
+        "create official train and held-out splits only after formal gold is updated",
+        "keep automatic tuning disabled until the tuning gate returns ok=true"
+      ]
+    },
+    "blockers": [],
+    "next_actions": [
+      "if the simulation is ready, human confirmation is still required before writing the real official file",
+      "after real promotion, rerun pipeline state, coverage, promotion audit, expanded preview, and tuning gate checks"
+    ]
+  },
+  "blockers": [],
+  "warnings": [],
+  "next_action": "wait for explicit human confirmation token COPY_REVIEWED_LABELS_20260622"
+}

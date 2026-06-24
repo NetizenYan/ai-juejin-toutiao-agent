@@ -1,0 +1,18 @@
+{
+  "base_count": 50,
+  "accepted_added": 65,
+  "merge_skipped": 15,
+  "rejected_skipped": 0,
+  "needs_lookup_skipped": 0,
+  "projected_count": 115,
+  "accepted_counts": {
+    "A_exact_news_qa": 14,
+    "B_context_follow_up": 14,
+    "C_time_sensitive": 9,
+    "D_source_limited": 8,
+    "E_multi_document": 8,
+    "F_similar_distractor": 4,
+    "G_no_answer": 4,
+    "H_investment_boundary": 4
+  }
+}

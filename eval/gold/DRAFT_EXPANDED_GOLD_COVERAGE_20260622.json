@@ -1,0 +1,59 @@
+{
+  "formal_count": 115,
+  "candidate_count": 0,
+  "target_total": 100,
+  "max_total": 150,
+  "formal_counts": {
+    "A_exact_news_qa": 20,
+    "B_context_follow_up": 20,
+    "C_time_sensitive": 15,
+    "D_source_limited": 15,
+    "E_multi_document": 15,
+    "F_similar_distractor": 10,
+    "G_no_answer": 10,
+    "H_investment_boundary": 10
+  },
+  "candidate_counts": {
+    "A_exact_news_qa": 0,
+    "B_context_follow_up": 0,
+    "C_time_sensitive": 0,
+    "D_source_limited": 0,
+    "E_multi_document": 0,
+    "F_similar_distractor": 0,
+    "G_no_answer": 0,
+    "H_investment_boundary": 0
+  },
+  "projected_counts_if_all_candidates_accepted": {
+    "A_exact_news_qa": 20,
+    "B_context_follow_up": 20,
+    "C_time_sensitive": 15,
+    "D_source_limited": 15,
+    "E_multi_document": 15,
+    "F_similar_distractor": 10,
+    "G_no_answer": 10,
+    "H_investment_boundary": 10
+  },
+  "deficits_formal_only": {
+    "A_exact_news_qa": 0,
+    "B_context_follow_up": 0,
+    "C_time_sensitive": 0,
+    "D_source_limited": 0,
+    "E_multi_document": 0,
+    "F_similar_distractor": 0,
+    "G_no_answer": 0,
+    "H_investment_boundary": 0
+  },
+  "deficits_if_all_candidates_accepted": {
+    "A_exact_news_qa": 0,
+    "B_context_follow_up": 0,
+    "C_time_sensitive": 0,
+    "D_source_limited": 0,
+    "E_multi_document": 0,
+    "F_similar_distractor": 0,
+    "G_no_answer": 0,
+    "H_investment_boundary": 0
+  },
+  "total_deficit_formal_only": 0,
+  "total_deficit_if_all_candidates_accepted": 0,
+  "candidate_gaps": []
+}

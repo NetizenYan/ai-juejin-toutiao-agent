@@ -1,0 +1,59 @@
+{
+  "preview_only": true,
+  "input_count": 115,
+  "train_count": 80,
+  "heldout_count": 35,
+  "evidence_group_count": 48,
+  "evidence_group_overlap_count": 0,
+  "heldout_ratio": 0.3,
+  "min_heldout": 30,
+  "seed": "20260622",
+  "train_path": "eval\\gold\\splits\\preview\\retrieval_train_preview_20260622.jsonl",
+  "heldout_path": "eval\\gold\\splits\\preview\\retrieval_heldout_preview_20260622.jsonl",
+  "summary_path": "eval\\gold\\splits\\preview\\retrieval_split_preview_20260622.json",
+  "report_path": "eval\\gold\\splits\\preview\\RETRIEVAL_SPLIT_PREVIEW_20260622.md",
+  "overlap_count": 0,
+  "unique_id_count": 115,
+  "class_counts": {
+    "A_exact_news_qa": {
+      "total": 20,
+      "train": 14,
+      "heldout": 6
+    },
+    "B_context_follow_up": {
+      "total": 20,
+      "train": 14,
+      "heldout": 6
+    },
+    "C_time_sensitive": {
+      "total": 15,
+      "train": 10,
+      "heldout": 5
+    },
+    "D_source_limited": {
+      "total": 15,
+      "train": 10,
+      "heldout": 5
+    },
+    "E_multi_document": {
+      "total": 15,
+      "train": 10,
+      "heldout": 5
+    },
+    "F_similar_distractor": {
+      "total": 10,
+      "train": 8,
+      "heldout": 2
+    },
+    "G_no_answer": {
+      "total": 10,
+      "train": 7,
+      "heldout": 3
+    },
+    "H_investment_boundary": {
+      "total": 10,
+      "train": 7,
+      "heldout": 3
+    }
+  }
+}

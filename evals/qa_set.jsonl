@@ -1,0 +1,15 @@
+{"id": "nq1", "q": "最近有什么经济新闻？", "intent": "news_qa", "expect_evidence": true, "expect_answer_contains_any": ["经济", "消费", "GDP", "金融", "贸易"]}
+{"id": "nq2", "q": "有哪些科技类的新闻报道？", "intent": "news_qa", "expect_evidence": true, "expect_answer_contains_any": ["科技", "芯片", "AI", "人工智能", "互联网"]}
+{"id": "nq3", "q": "关于人工智能和芯片，站内有什么资讯？", "intent": "news_qa", "expect_evidence": true, "expect_answer_contains_any": ["芯片", "人工智能", "AI", "算力", "模型"]}
+{"id": "nq4", "q": "博鳌论坛相关的新闻有吗？", "intent": "news_qa", "expect_evidence": true, "expect_answer_contains_any": ["博鳌"]}
+{"id": "nq5", "q": "消费促进方面的最新资讯", "intent": "news_qa", "expect_evidence": true, "expect_answer_contains_any": ["消费", "促进", "零售", "市场"]}
+{"id": "nq6", "q": "金融市场有什么动态新闻？", "intent": "news_qa", "expect_evidence": true, "expect_answer_contains_any": ["央行", "降准", "A股", "金融", "市场", "外汇"]}
+{"id": "nq7", "q": "域名增长相关的报道", "intent": "news_qa", "expect_evidence": true, "expect_answer_contains_any": ["域名", "互联网", "网络"]}
+{"id": "rc1", "q": "给我推荐几条新闻看看", "intent": "recommendation", "expect_evidence": true}
+{"id": "rc2", "q": "推荐一些热门文章", "intent": "recommendation", "expect_evidence": true}
+{"id": "rc3", "q": "看看有哪些热点报道", "intent": "recommendation", "expect_evidence": true}
+{"id": "gc1", "q": "讲个冷笑话", "intent": "general_chat", "expect_evidence": false}
+{"id": "gc2", "q": "你是谁？", "intent": "general_chat", "expect_evidence": false}
+{"id": "gc3", "q": "用一句话介绍你自己", "intent": "general_chat", "expect_evidence": false}
+{"id": "gc4", "q": "1加1等于几？", "intent": "general_chat", "expect_evidence": false, "expect_answer_contains_any": ["2", "二"]}
+{"id": "gc5", "q": "帮我写一句鼓励的话", "intent": "general_chat", "expect_evidence": false}

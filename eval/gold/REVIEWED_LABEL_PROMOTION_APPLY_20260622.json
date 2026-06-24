@@ -1,0 +1,39 @@
+{
+  "applied": true,
+  "confirmation_token": "matched",
+  "preview": {
+    "path": "eval\\gold\\reviewed_labels_official_preview_20260622.jsonl",
+    "exists": true,
+    "bytes": 41177,
+    "sha256": "17ac5562dcdb68457e778a3682d4c41c3689ce54697633d5cc8abb9087218376",
+    "row_count": 80
+  },
+  "official_before": {
+    "path": "eval\\gold\\reviewed_labels_20260622.jsonl",
+    "exists": true,
+    "bytes": 1,
+    "sha256": "01ba4719c80b6fe911b091a7c05124b64eeece964e09c058ef8f9805daca546b",
+    "row_count": 0
+  },
+  "official_after": {
+    "path": "eval\\gold\\reviewed_labels_20260622.jsonl",
+    "exists": true,
+    "bytes": 41177,
+    "sha256": "17ac5562dcdb68457e778a3682d4c41c3689ce54697633d5cc8abb9087218376",
+    "row_count": 80
+  },
+  "backup": {
+    "created": true,
+    "path": "eval\\gold\\backups\\reviewed_labels_20260622.backup_before_promotion_20260623_100612.jsonl",
+    "sha256": "01ba4719c80b6fe911b091a7c05124b64eeece964e09c058ef8f9805daca546b"
+  },
+  "validation": {
+    "ok": true,
+    "row_count": 80,
+    "accepted_count": 65,
+    "rejected_count": 0,
+    "errors": []
+  },
+  "blockers": [],
+  "warnings": []
+}

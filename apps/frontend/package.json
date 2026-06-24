@@ -1,0 +1,28 @@
+{
+  "name": "xwzx-news",
+  "private": true,
+  "version": "0.0.0",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview"
+  },
+  "dependencies": {
+    "axios": "^1.18.1",
+    "dompurify": "^3.4.11",
+    "marked": "^16.3.0",
+    "pinia": "^3.0.3",
+    "pinia-plugin-persistedstate": "^4.5.0",
+    "vant": "^4.9.21",
+    "vue-i18n": "^9.8.0",
+    "vue-router": "^4.5.1"
+  },
+  "devDependencies": {
+    "@vitejs/plugin-vue": "^6.0.7",
+    "vite": "^7.3.5"
+  },
+  "overrides": {
+    "esbuild": "^0.28.1"
+  }
+}

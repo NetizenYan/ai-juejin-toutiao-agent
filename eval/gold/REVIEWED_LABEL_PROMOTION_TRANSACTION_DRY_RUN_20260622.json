@@ -1,0 +1,40 @@
+{
+  "dry_run_only": true,
+  "manual_transaction_ready": true,
+  "preview": {
+    "path": "eval\\gold\\reviewed_labels_official_preview_20260622.jsonl",
+    "exists": true,
+    "bytes": 38911,
+    "sha256": "4016bb5bdde7c2f8022b22e6bae0f8855665c1465f95fa5d76a5df185992e632",
+    "row_count": 80,
+    "decision_counts": {
+      "accept_as_gold": 65,
+      "merge_with_existing": 15,
+      "needs_evidence_lookup": 0,
+      "reject": 0
+    }
+  },
+  "official": {
+    "path": "eval\\gold\\reviewed_labels_20260622.jsonl",
+    "exists": true,
+    "bytes": 1,
+    "sha256": "01ba4719c80b6fe911b091a7c05124b64eeece964e09c058ef8f9805daca546b",
+    "row_count": 0,
+    "decision_counts": {
+      "accept_as_gold": 0,
+      "merge_with_existing": 0,
+      "needs_evidence_lookup": 0,
+      "reject": 0
+    }
+  },
+  "blockers": [],
+  "warnings": [],
+  "actions": [
+    "manual confirmation required before copying the preview into the official reviewed-label file",
+    "validate the preview against the gray candidate source",
+    "back up the current official reviewed-label file and record its hash",
+    "after human approval only, copy the preview file content into the official reviewed-label file",
+    "rerun reviewed-label validation, coverage, promotion audit, split preview, and the tuning gate check",
+    "keep automatic tuning closed until official train/held-out splits and baseline reports exist"
+  ]
+}

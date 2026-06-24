@@ -1,0 +1,67 @@
+# Local secrets and machine-specific config
+.env
+.env.*
+!.env.example
+.claude/
+
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+.venv/
+venv/
+
+# Node / frontend
+node_modules/
+apps/frontend/node_modules/
+apps/frontend/dist/
+apps/frontend/test-results/
+apps/frontend/.env
+apps/frontend/.env.*
+!apps/frontend/.env.example
+
+# Logs, runtime state, and generated reports
+logs/
+locks/
+reports/
+eval/reports/
+work/
+.cache/
+runtime_cache/
+backups/
+archive/
+env_snapshots/
+*.log
+*.out.log
+*.err.log
+*.pid
+
+# Local databases, dumps, and generated data
+*.db
+*.sqlite
+*.sqlite3
+*.db-journal
+*.dump
+*.bak
+*.sql.gz
+*.tar
+*.tar.gz
+*.zip
+
+# OS / editor noise
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+
+# Private keys and certificates
+*.pem
+*.key
+*.crt
+*.p12
+*.pfx

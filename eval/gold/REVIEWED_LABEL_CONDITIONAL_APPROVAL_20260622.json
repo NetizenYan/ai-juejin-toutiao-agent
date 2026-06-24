@@ -1,0 +1,79 @@
+{
+  "ok": true,
+  "row_count": 80,
+  "checked_counts": {
+    "B_context_follow_up": 14,
+    "C_time_sensitive": 9,
+    "E_multi_document": 8,
+    "G_no_answer": 4,
+    "H_investment_boundary": 4
+  },
+  "date_checks": [
+    {
+      "candidate_id": "candidate_time_recent_008",
+      "evidence_id": "news:jjrb:139aa3760c02aada",
+      "window": "2026年6月上旬",
+      "publish_date": "2026-06-07",
+      "ok": true
+    },
+    {
+      "candidate_id": "candidate_time_recent_009",
+      "evidence_id": "news:jjrb:c1ec8dba59f743ab",
+      "window": "2026年6月上旬",
+      "publish_date": "2026-06-05",
+      "ok": true
+    },
+    {
+      "candidate_id": "candidate_time_recent_010",
+      "evidence_id": "news:jjrb:d1ff128e2ba01cd3",
+      "window": "2026年6月初",
+      "publish_date": "2026-06-04",
+      "ok": true
+    },
+    {
+      "candidate_id": "candidate_time_recent_011",
+      "evidence_id": "news:jjrb:234d66fbdeb07f7c",
+      "window": "2026年5月下旬",
+      "publish_date": "2026-05-21",
+      "ok": true
+    },
+    {
+      "candidate_id": "candidate_time_recent_012",
+      "evidence_id": "news:jjrb:821d33acb1cdfaf4",
+      "window": "2026年5月下旬",
+      "publish_date": "2026-05-27",
+      "ok": true
+    },
+    {
+      "candidate_id": "candidate_time_recent_013",
+      "evidence_id": "news:jjrb:ac7e8fcf5dfa6a03",
+      "window": "2026年6月初",
+      "publish_date": "2026-06-02",
+      "ok": true
+    },
+    {
+      "candidate_id": "candidate_time_recent_014",
+      "evidence_id": "news:jjrb:543874085db2b6c0",
+      "window": "2026年5月中旬",
+      "publish_date": "2026-05-20",
+      "ok": true
+    },
+    {
+      "candidate_id": "candidate_time_replacement_015",
+      "evidence_id": "news:jjrb:99534f0b518888e0",
+      "window": "2026年6月上旬",
+      "publish_date": "2026-06-01",
+      "ok": true
+    },
+    {
+      "candidate_id": "candidate_time_replacement_016",
+      "evidence_id": "news:jjrb:06a9d97492dd5d69",
+      "window": "2026年6月上旬",
+      "publish_date": "2026-06-08",
+      "ok": true
+    }
+  ],
+  "split_policy": "group_by_evidence_or_parent_news_id",
+  "errors": [],
+  "warnings": []
+}
