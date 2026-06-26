@@ -2,7 +2,7 @@
 
 本地优先的新闻 Agent 学习项目：用 FastAPI、Vue、MCP、RAG、Qdrant、Ollama 和 OCR，构建一个可检索、可追溯、可评测的单 Agent 新闻问答系统。
 
-> 项目用于学习 Agent 工程架构，不提供投资建议，不内置真实 API key，不附带大规模新闻语料或数据库 dump。
+> 项目用于学习Harness Agent，不提供投资建议，不内置真实 API key，不附带大规模新闻语料或数据库 dump。
 
 ## 项目定位
 
