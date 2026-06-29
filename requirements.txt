@@ -28,6 +28,6 @@ typing_extensions==4.15.0
 uvicorn==0.38.0
 uvloop==0.22.1 ; sys_platform != 'win32'
 openai>=1.50
-mcp>=1.0
+mcp>=1.28.1
 watchfiles==1.1.1
 websockets==15.0.1
