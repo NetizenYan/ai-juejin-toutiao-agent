@@ -84,6 +84,7 @@ DEFAULT_SYSTEM_PROMPT = (
 # 意图 → 允许的工具白名单（权限在 Harness 层控制，模型无权决定）
 ALLOWED_TOOLS_BY_INTENT = {
     "news_qa": {"retrieve_news"},  # 语义检索（RAG/Qdrant）替代关键词 LIKE
+    "news_lookup": {"news_detail"},  # 用户明确给出新闻 ID（"新闻 123"）
     "recommendation": {"recommend_news", "news_search", "news_detail", "user_recent_history"},
     "web_research": {"web_fetch", "web_search", "web_capture_ocr"},
     "general_chat": set(),
@@ -92,6 +93,7 @@ ALLOWED_TOOLS_BY_INTENT = {
 # 意图 → MCP server 会话（每意图连对应 server）
 _SESSION_BY_INTENT = {
     "news_qa": rag_session,
+    "news_lookup": business_session,
     "recommendation": business_session,
     "web_research": web_session,
 }
@@ -442,21 +444,30 @@ def _deterministic_tool_calls(latest_user: str, user_id: int | None) -> list[dic
 async def _plan_tool_calls(client: LLMClient, history_messages: list[dict],
                            latest_user: str, tool_defs: list[dict], allowed: set[str],
                            user_id: int | None) -> list[dict]:
-    """让模型规划工具调用；本地模型不稳则用确定性 fallback。统一过白名单 + 校验 + 限额。"""
-    raw_calls: list[dict] = _deterministic_tool_calls(latest_user, user_id=user_id)
-    if not raw_calls and tool_defs:
+    """让模型规划工具调用；模型不可用/超时/给出的调用全部不合规时，用确定性 fallback。
+
+    统一过意图白名单 + 参数校验 + 单轮限额。AGENT_TOOL_PLANNING=deterministic 时跳过模型规划。
+    """
+    validated: list[dict] = []
+    if tool_defs and settings.agent_tool_planning == "model_first":
         try:
-            message = await client.complete_message(
-                [{"role": "system", "content": DEFAULT_SYSTEM_PROMPT}, *history_messages],
-                tools=tool_defs, tool_choice="auto",
+            message = await asyncio.wait_for(
+                client.complete_message(
+                    [{"role": "system", "content": DEFAULT_SYSTEM_PROMPT}, *history_messages],
+                    tools=tool_defs, tool_choice="auto",
+                ),
+                timeout=settings.tool_timeout_seconds,
             )
-            raw_calls = _extract_model_tool_calls(message)
+            validated = _validate_tool_calls(_extract_model_tool_calls(message), allowed, user_id)
         except Exception:  # noqa: BLE001 - 本地模型 tool calling 不稳定 → fallback
-            raw_calls = []
+            validated = []
 
-    if not raw_calls:
-        raw_calls = _deterministic_tool_calls(latest_user, user_id=user_id)
+    if not validated:
+        validated = _validate_tool_calls(_deterministic_tool_calls(latest_user, user_id=user_id), allowed, user_id)
+    return validated
 
+
+def _validate_tool_calls(raw_calls: list[dict], allowed: set[str], user_id: int | None) -> list[dict]:
     validated: list[dict] = []
     for call in raw_calls:
         name = call.get("name", "")

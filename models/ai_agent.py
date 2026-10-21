@@ -29,7 +29,7 @@ class AiSession(Base):
     user_id: Mapped[int] = mapped_column(Integer, nullable=False, index=True, comment="用户ID")
     title: Mapped[Optional[str]] = mapped_column(String(255), comment="会话标题")
     intent: Mapped[Optional[str]] = mapped_column(
-        String(32), comment="意图: news_qa / recommendation / general_chat"
+        String(32), comment="意图: news_qa / news_lookup / recommendation / web_research / general_chat"
     )
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.now, comment="创建时间")
     updated_at: Mapped[datetime] = mapped_column(

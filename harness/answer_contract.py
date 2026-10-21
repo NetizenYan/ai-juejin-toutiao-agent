@@ -49,7 +49,7 @@ def build_answer_contract(
     intent: str,
     route: str | None = None,
 ) -> AnswerContract:
-    is_news = intent in {"news_qa", "recommendation", "web_research"}
+    is_news = intent in {"news_qa", "news_lookup", "recommendation", "web_research"}
     requires_evidence = bool(is_news and settings.answer_contract_require_evidence_for_news)
     must_include_citations = bool(is_news and settings.answer_contract_require_citations_for_news)
 

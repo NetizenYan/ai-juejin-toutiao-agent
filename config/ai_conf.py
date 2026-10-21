@@ -75,6 +75,15 @@ def normalize_rag_chunk_type_filter(value: str | None) -> str | None:
     return chunk_type
 
 
+def normalize_agent_tool_planning(value: str | None) -> str:
+    mode = (value or "model_first").strip().lower()
+    if not mode:
+        return "model_first"
+    if mode not in {"model_first", "deterministic"}:
+        raise ValueError("AGENT_TOOL_PLANNING must be either 'model_first' or 'deterministic'")
+    return mode
+
+
 def normalize_b_v3_source_policy(value: str | None) -> str:
     policy = (value or "local_test").strip().lower()
     if not policy:
@@ -158,6 +167,9 @@ class AISettings:
     context_summary_message_threshold: int = _int("CONTEXT_SUMMARY_MESSAGE_THRESHOLD", 12)
     context_summary_char_threshold: int = _int("CONTEXT_SUMMARY_CHAR_THRESHOLD", 6000)
     context_max_recent_evidence_ids: int = _int("CONTEXT_MAX_RECENT_EVIDENCE_IDS", 8)
+
+    # 工具规划：model_first = 先让模型规划，失败/超时/不合规再走确定性规则；deterministic = 只用规则
+    agent_tool_planning: str = normalize_agent_tool_planning(os.getenv("AGENT_TOOL_PLANNING", "model_first"))
 
     # Harness 硬限额（MVP 护栏）
     max_tool_calls_per_turn: int = _int("MAX_TOOL_CALLS_PER_TURN", 5)
