@@ -33,7 +33,7 @@ from harness.rag_index import add_external_doc
 from harness.external_evidence import verify_external_evidence
 from harness.query_understanding import understand_user_query
 from harness.answer_contract import build_answer_contract, parse_enforce_routes, resolve_validation_mode, AnswerContract
-from harness.answer_validator import AnswerValidationResult, validate_answer
+from harness.answer_validator import AnswerValidationResult, is_refusal, validate_answer
 from harness.agent_orchestrator import build_agent_orchestration_plan
 from harness.anchor_resolver import (
     confirmed_anchor_from_user_selection,
@@ -1044,10 +1044,8 @@ def _no_answer_response() -> str:
 
 
 def _looks_like_refusal(answer: str) -> bool:
-    compact = re.sub(r"[\s*_`]+", "", answer or "")
-    if any(token in compact for token in ("未找到可靠新闻证据", "站内未找到", "没有找到可靠新闻证据", "换个关键词")):
-        return True
-    return "未找到" in compact and any(token in compact for token in ("证据", "新闻", "报道", "相关内容"))
+    # Same definition as the validator, so a long answer with one refusal phrase is not waved through.
+    return is_refusal(answer)
 
 
 def _should_force_no_answer(validation: AnswerValidationResult) -> bool:

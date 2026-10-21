@@ -1,7 +1,7 @@
 import unittest
 
 from harness.answer_contract import AnswerContract
-from harness.answer_validator import extract_citations, validate_answer
+from harness.answer_validator import extract_citations, is_refusal, validate_answer
 
 
 class AnswerValidatorTests(unittest.TestCase):
@@ -88,6 +88,25 @@ class AnswerValidatorTests(unittest.TestCase):
 
         self.assertTrue(result.passed)
         self.assertEqual(result.hallucination_risk, "low")
+
+    def test_long_answer_with_refusal_phrase_is_not_treated_as_refusal(self):
+        answer = (
+            "据悉，新质生产力相关政策将在明年全面落地，预计带动制造业投资大幅增长，"
+            "多个地区已经出台配套补贴措施，龙头企业订单同比明显增加，行业景气度持续上行，"
+            "市场普遍预期相关产业链将迎来新一轮扩张周期，具体细节站内未找到更多报道，可以换个关键词再试。"
+        )
+
+        self.assertFalse(is_refusal(answer))
+        result = validate_answer(answer, self._contract(), self._evidence())
+        self.assertFalse(result.passed)
+        self.assertIn("missing_citation", result.constraint_violations)
+
+    def test_cited_answer_mentioning_not_found_is_not_a_refusal(self):
+        self.assertFalse(is_refusal("站内未找到更多细节，但已有报道提到高质量发展取得新进展。[news:2726]"))
+
+    def test_short_refusal_is_still_recognized(self):
+        self.assertTrue(is_refusal("站内未找到可靠新闻证据，建议换个关键词再试。"))
+        self.assertTrue(is_refusal("我查了站内新闻，但没有找到足够匹配的内容，你可以换个关键词再试。"))
 
     def test_quoted_query_term_not_supported_by_evidence_fails_non_refusal(self):
         result = validate_answer(

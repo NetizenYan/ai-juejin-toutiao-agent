@@ -97,11 +97,32 @@ def extract_citations(answer: str) -> list[str]:
     return [match[1:-1] for match in CITATION_RE.findall(answer or "")]
 
 
-def _is_refusal(answer: str) -> bool:
-    compact = re.sub(r"[\s*_`]+", "", answer or "")
-    if any(token in compact for token in REFUSAL_PATTERNS):
+# A refusal is a citation-free "nothing found" reply. Answers that carry claims besides a
+# refusal phrase must still pass the normal checks, so only a short remainder is allowed.
+REFUSAL_MAX_OTHER_CHARS = 40
+# Split down to clauses: a hallucinated sentence can end with ", 站内未找到更多报道".
+_SENTENCE_SPLIT_RE = re.compile(r"[。！？!?；;，,\n]+")
+
+
+def _is_refusal_sentence(sentence: str) -> bool:
+    if any(token in sentence for token in REFUSAL_PATTERNS):
         return True
-    return "未找到" in compact and any(token in compact for token in ("可靠", "证据", "新闻", "报道", "相关内容"))
+    return "未找到" in sentence and any(token in sentence for token in ("可靠", "证据", "新闻", "报道", "相关内容"))
+
+
+def is_refusal(answer: str) -> bool:
+    compact = re.sub(r"[\s*_`]+", "", answer or "")
+    if not compact or CITATION_RE.search(compact):
+        return False
+    sentences = [part for part in _SENTENCE_SPLIT_RE.split(compact) if part]
+    refusal_sentences = [part for part in sentences if _is_refusal_sentence(part)]
+    if not refusal_sentences:
+        return False
+    other_chars = sum(len(part) for part in sentences if not _is_refusal_sentence(part))
+    return other_chars <= REFUSAL_MAX_OTHER_CHARS
+
+
+_is_refusal = is_refusal
 
 
 def _evidence_ref(item: Any) -> str | None:
