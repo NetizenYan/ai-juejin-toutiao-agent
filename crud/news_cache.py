@@ -35,23 +35,19 @@ async def get_news_list(db: AsyncSession, category_id: int, skip: int = 0, limit
     page = skip // limit + 1
     cached_list = await get_cache_news_list(category_id, page, limit)  # 缓存数据 json
     if cached_list:
-        # return cached_list  # 要的是 ORM
-        return [News(**item) for item in cached_list]
+        return cached_list
 
     # 查询的是指定分类下的所有新闻
     stmt = select(News).where(News.category_id == category_id).offset(skip).limit(limit)
     result = await db.execute(stmt)
     news_list = result.scalars().all()
 
-    # 写入缓存
-    if news_list:
-        # 先把 ORM 数据 转换 字典才能写入缓存
-        # ORM 转成 Pydantic，再转为 字典
-        # by_alias=False 不适用别名，保存 Python 风格，因为 Redis 数据是给后端用的
-        news_data = [NewsItemBase.model_validate(item).model_dump(mode="json", by_alias=False) for item in news_list]
+    # 缓存命中与未命中返回同一结构：列表项不含正文 content，字段用前端约定的别名（publishTime/categoryId）
+    news_data = [NewsItemBase.model_validate(item).model_dump(mode="json", by_alias=True) for item in news_list]
+    if news_data:
         await set_cache_news_list(category_id, page, limit, news_data)
 
-    return news_list
+    return news_data
 
 
 async def get_news_count(db: AsyncSession, category_id: int):

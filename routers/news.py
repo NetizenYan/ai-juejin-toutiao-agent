@@ -31,8 +31,8 @@ async def get_categories(skip: int = 0, limit: int = 100, db: AsyncSession = Dep
 @router.get("/list")
 async def get_news_list(
         category_id: int = Query(..., alias="categoryId"),
-        page: int = 1,
-        page_size: int = Query(10, alias="pageSize", le=100),
+        page: int = Query(1, ge=1),
+        page_size: int = Query(10, alias="pageSize", ge=1, le=100),
         db: AsyncSession = Depends(get_db)
 ):
     # 思路：处理分页规则 → 查询新闻列表 → 计算总量 → 计算是否还有更多

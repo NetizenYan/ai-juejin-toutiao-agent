@@ -1,4 +1,4 @@
-from typing import Optional
+from typing import Literal, Optional
 
 from pydantic import BaseModel, Field, ConfigDict
 
@@ -43,11 +43,12 @@ class UserAuthResponse(BaseModel):
 
 # 更新用户信息的模型类
 class UserUpdateRequest(BaseModel):
-    nickname: str = None
-    avatar: str = None
-    gender: str = None
-    bio: str = None
-    phone: str = None
+    nickname: Optional[str] = Field(None, max_length=50)
+    avatar: Optional[str] = Field(None, max_length=255)
+    # 与 user.gender 的数据库 ENUM 一致，非法值在校验阶段返回 422，而不是写库时报 500
+    gender: Optional[Literal["male", "female", "unknown"]] = None
+    bio: Optional[str] = Field(None, max_length=500)
+    phone: Optional[str] = Field(None, max_length=20)
 
 
 class UserChangePasswordRequest(BaseModel):

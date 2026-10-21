@@ -46,14 +46,14 @@ async def get_history_list(page: int = Query(1, ge=1),
     return success_response(data=data)
 
 
-@router.delete("/delete/{history_id}")
-async def delete_history(history_id: int,
+@router.delete("/delete/{news_id}")
+async def delete_history(news_id: int,
                          user: User = Depends(get_current_user),
                          db: AsyncSession = Depends(get_db)):
     """
-    删除历史记录
+    删除当前用户对某条新闻的浏览记录。路径参数是新闻 ID（每个用户每条新闻只有一条历史，前端传的也是新闻 ID）。
     """
-    result = await history.delete_history(db, user.id, history_id)
+    result = await history.delete_history(db, user.id, news_id)
     if not result:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="历史记录不存在")
     return success_response(message="删除成功")

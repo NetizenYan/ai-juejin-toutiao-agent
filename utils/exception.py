@@ -36,19 +36,33 @@ async def http_exception_handler(request: Request, exc: HTTPException):
     )
 
 
+# 唯一约束名 → 提示文案（约束名见 models/*.py 与 sql/mysql_schema.sql）
+_UNIQUE_CONSTRAINT_MESSAGES = (
+    ("username_UNIQUE", "用户名已存在"),
+    ("phone_UNIQUE", "手机号已被使用"),
+    ("user_news_unique", "已经收藏过这条新闻"),
+    ("token_UNIQUE", "令牌冲突，请重新登录"),
+)
+
+
+def integrity_error_detail(error_msg: str) -> str:
+    """把数据库完整性错误映射为用户可读的提示，按具体约束区分，而不是一律提示用户名已存在。"""
+    for constraint, message in _UNIQUE_CONSTRAINT_MESSAGES:
+        if constraint in error_msg:
+            return message
+    if "Duplicate entry" in error_msg or "UNIQUE constraint failed" in error_msg:
+        return "数据已存在，请勿重复提交"
+    if "FOREIGN KEY" in error_msg or "foreign key constraint" in error_msg.lower():
+        return "关联数据不存在"
+    return "数据约束冲突，请检查输入"
+
+
 async def integrity_error_handler(request: Request, exc: IntegrityError):
     """
     处理数据库完整性约束错误
     """
     error_msg = str(exc.orig)
-
-    # 判断具体的约束错误类型
-    if "username_UNIQUE" in error_msg or "Duplicate entry" in error_msg:
-        detail = "用户名已存在"
-    elif "FOREIGN KEY" in error_msg:
-        detail = "关联数据不存在"
-    else:
-        detail = "数据约束冲突，请检查输入"
+    detail = integrity_error_detail(error_msg)
 
     # 开发模式下返回详细错误信息
     error_data = None
