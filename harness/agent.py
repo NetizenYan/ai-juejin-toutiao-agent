@@ -1450,8 +1450,9 @@ async def run_chat(history_messages: list[dict], db: Optional[AsyncSession] = No
                 yield token
             return
 
-    # 步骤②：web 抓取内容回灌 RAG（增量 embed），使其成为可语义检索的语料
-    if intent == "web_research":
+    # 步骤②：web 抓取内容回灌 RAG（增量 embed），使其成为可语义检索的语料。
+    # 回灌会写入公共 news 表，仅在显式开启 EXTERNAL_DOC_INDEXING_ENABLED 时执行。
+    if intent == "web_research" and settings.external_doc_indexing_enabled:
         for result in tool_results:
             if result.get("tool") == "web_fetch" and not result.get("error") and result.get("text"):
                 try:

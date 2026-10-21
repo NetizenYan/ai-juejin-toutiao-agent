@@ -440,8 +440,13 @@ async def ingest_url_via_ocr(
     add_external_doc_fn: AddExternalDocFn = add_external_doc,
     category_id: int = 1,
     min_ocr_confidence: float = 0.35,
+    index_enabled: bool = True,
 ) -> dict:
-    """Capture an external page via screenshot OCR and index usable text as a low-trust lead."""
+    """Capture an external page via screenshot OCR and stage usable text as a low-trust lead.
+
+    With index_enabled=False the clean record is returned as a candidate only and
+    is not written into the station news table / vector index.
+    """
     capture = await capture_screenshot_fn(source_url)
     image_path = str(capture.get("image_path") or capture.get("path") or "").strip()
     record_source_url = str(capture.get("final_url") or source_url).strip() or source_url
@@ -492,6 +497,10 @@ async def ingest_url_via_ocr(
     )
     if status != "pending":
         return record.to_candidate_item()
+    if not index_enabled:
+        item = record.to_candidate_item()
+        item["ingest_status"] = "not_indexed"
+        return item
     return await index_ocr_capture_record(
         record,
         add_external_doc_fn=add_external_doc_fn,

@@ -185,6 +185,9 @@ class AISettings:
     juhe_api_key: str = os.getenv("JUHE_API_KEY", "")
     web_allowed_domains: tuple[str, ...] = _csv("WEB_ALLOWED_DOMAINS")
     web_blocked_domains: tuple[str, ...] = _csv("WEB_BLOCKED_DOMAINS")
+    # 站外网页/OCR 内容是否写入 news 表 + 向量库。写入后会出现在所有用户的新闻列表里并被当作站内证据，
+    # 默认关闭：站外内容只作为本轮低可信线索使用。
+    external_doc_indexing_enabled: bool = _bool("EXTERNAL_DOC_INDEXING_ENABLED", False)
     web_capture_output_dir: str = os.getenv("WEB_CAPTURE_OUTPUT_DIR", "work/web_captures")
     web_capture_viewport_width: int = _int("WEB_CAPTURE_VIEWPORT_WIDTH", 1280)
     web_capture_viewport_height: int = _int("WEB_CAPTURE_VIEWPORT_HEIGHT", 1600)

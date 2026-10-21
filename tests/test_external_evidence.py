@@ -333,6 +333,41 @@ class ExternalEvidenceTests(unittest.TestCase):
         self.assertEqual(item["verification_status"], "unverified")
         self.assertEqual(item["acquisition_method"], "ocr_screenshot")
 
+    def test_ingest_url_via_ocr_does_not_index_when_disabled(self):
+        indexed_docs = []
+
+        async def fake_capture_screenshot(_url):
+            return {"image_path": "captures/no-index.png", "raw_image_hash": "sha256:noindex"}
+
+        async def fake_extract_ocr_text(_image_path):
+            return {"text": "Policy signal: funding support expands.", "confidence": 0.91, "title": "Lead"}
+
+        async def fake_add_external_doc(**kwargs):
+            indexed_docs.append(kwargs)
+            return 999
+
+        item = asyncio.run(
+            ingest_url_via_ocr(
+                "https://x.example/post/no-index",
+                source_name="X",
+                capture_screenshot_fn=fake_capture_screenshot,
+                extract_ocr_text_fn=fake_extract_ocr_text,
+                add_external_doc_fn=fake_add_external_doc,
+                index_enabled=False,
+            )
+        )
+
+        self.assertEqual(indexed_docs, [])
+        self.assertEqual(item["ingest_status"], "not_indexed")
+        self.assertEqual(item["staging_status"], "staged_clean")
+        self.assertNotIn("evidence_id", item)
+        self.assertEqual(item["source_credibility"], "low")
+
+    def test_external_doc_indexing_is_disabled_by_default(self):
+        from config.ai_conf import AISettings
+
+        self.assertFalse(AISettings.external_doc_indexing_enabled)
+
 
 if __name__ == "__main__":
     unittest.main()

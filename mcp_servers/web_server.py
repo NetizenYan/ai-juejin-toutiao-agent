@@ -144,6 +144,7 @@ async def web_capture_ocr(url: str, source_name: str = "", min_ocr_confidence: f
             capture_screenshot_fn=screenshot_provider.capture,
             ocr_provider=ocr_provider,
             min_ocr_confidence=threshold,
+            index_enabled=settings.external_doc_indexing_enabled,
         )
     except (SafeHttpError, RuntimeError, ValueError) as exc:
         return {"tool": "web_capture_ocr", "url": url, "error": str(exc), "evidence_ids": []}
