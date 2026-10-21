@@ -12,6 +12,11 @@ import os
 from qdrant_client import AsyncQdrantClient
 from qdrant_client.models import Distance, VectorParams
 
+from config.env_loader import load_project_env
+
+# 这些值在导入时读取；不显式加载 .env 时，结果会取决于其他 config 模块的导入顺序
+load_project_env()
+
 QDRANT_URL = os.getenv("QDRANT_URL", "http://localhost:6333")
 COLLECTION = os.getenv("RAG_COLLECTION_NAME") or os.getenv("RAG_COLLECTION", "toutiao_news_claude")  # 父级
 CHUNK_COLLECTION = os.getenv("RAG_CHUNK_COLLECTION_NAME") or os.getenv(
