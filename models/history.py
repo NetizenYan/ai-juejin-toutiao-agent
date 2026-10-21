@@ -1,5 +1,5 @@
 from sqlalchemy.orm import Mapped, mapped_column,DeclarativeBase
-from sqlalchemy import Integer, DateTime, ForeignKey, Index
+from sqlalchemy import Integer, DateTime, ForeignKey, Index, UniqueConstraint
 from datetime import datetime
 from .users import User
 from .news import News
@@ -17,6 +17,8 @@ class History(Base):
 
     # 创建索引
     __table_args__ = (
+        # 每个用户每条新闻只有一条历史，add/delete 都按 (user_id, news_id) 定位
+        UniqueConstraint('user_id', 'news_id', name='user_news_history_unique'),
         Index('fk_history_user_idx', 'user_id'),
         Index('fk_history_news_idx', 'news_id'),
         Index('idx_view_time', 'view_time'),

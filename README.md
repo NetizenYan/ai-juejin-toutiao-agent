@@ -96,9 +96,22 @@ utils/               鉴权、安全、通用工具
 
 ```bash
 pip install -r requirements.txt
-copy .env.example .env
+cp .env.example .env        # Windows: copy .env.example .env
+
+# 初始化 MySQL：先建业务表，再建 AI 会话表（后者外键引用 user 表）
+mysql -u root -p < sql/mysql_schema.sql
+mysql -u root -p < scripts/ai_tables.sql
+
 python -m uvicorn main:app --host 127.0.0.1 --port 8030
 ```
+
+建表后 `news_category` 为空，需要先插入分类和新闻数据，首页列表才有内容。
+
+几个需要按环境调整的配置（详见 `.env.example`）：
+
+- `RAG_RECENCY_REFERENCE_DATE`：语料是静态快照时，设为快照日期，否则"最近/近期"类问题会因超过 90 天窗口而全部无结果。
+- `AGENT_TOOL_PLANNING`：`model_first`（默认，模型规划工具、规则兜底）或 `deterministic`（只用规则，本地模型较慢时更快）。
+- `EXTERNAL_DOC_INDEXING_ENABLED`：默认 `false`；为 `true` 时站外网页/OCR 内容会写入公共新闻表并对所有用户可见。
 
 健康检查：
 
@@ -174,7 +187,7 @@ python -m pytest -q
 
 ```text
 Secret hygiene check passed.
-328 passed, 1 skipped
+353 passed, 1 skipped
 ```
 
 ## 安全与开源边界
