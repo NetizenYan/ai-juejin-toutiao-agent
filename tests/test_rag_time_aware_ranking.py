@@ -2,9 +2,20 @@ import unittest
 from datetime import datetime
 from types import SimpleNamespace
 
-from harness.rag_ranking import infer_publish_ts, quality_score, time_aware_hybrid_rerank
+from unittest import mock
+
+from harness.rag_ranking import (
+    infer_publish_ts,
+    quality_score,
+    recency_reference_ts,
+    recency_score,
+    time_aware_hybrid_rerank,
+)
 from harness import rag_search
 from harness.rag_search import search_news_rag
+
+# Fixtures are dated around June 2026; pin "now" so recency filters are deterministic.
+_NOW_TS = datetime(2026, 6, 21).timestamp()
 
 
 class _FakeEmbeddingClient:
@@ -60,6 +71,19 @@ class RagTimeAwareRankingTests(unittest.IsolatedAsyncioTestCase):
 
         self.assertEqual(ranked[0]["title"], "经济向新向优发展稳步推进")
         self.assertGreater(ranked[0]["recency_score"], ranked[1]["recency_score"])
+
+    def test_recency_reference_date_env_pins_now(self):
+        item = {"publish_time": "2026-06-01 00:00:00"}
+        with mock.patch.dict("os.environ", {"RAG_RECENCY_REFERENCE_DATE": "2026-06-21"}):
+            self.assertEqual(recency_reference_ts(), datetime(2026, 6, 21).timestamp())
+            self.assertEqual(recency_score(item), 0.95)
+        with mock.patch.dict("os.environ", {"RAG_RECENCY_REFERENCE_DATE": "2028-01-01"}):
+            self.assertEqual(recency_score(item), 0.20)
+
+    def test_invalid_recency_reference_date_falls_back_to_wall_clock(self):
+        with mock.patch.dict("os.environ", {"RAG_RECENCY_REFERENCE_DATE": "not-a-date"}), \
+                mock.patch("harness.rag_ranking.time.time", return_value=123.0):
+            self.assertEqual(recency_reference_ts(), 123.0)
 
     def test_finance_clickbait_quality_is_low(self):
         item = {
@@ -127,6 +151,7 @@ class RagTimeAwareRankingTests(unittest.IsolatedAsyncioTestCase):
             embedding_client_factory=lambda: _FakeEmbeddingClient(),
             qdrant_factory=lambda: _FakeQdrant(points),
             assert_meta_matches_fn=lambda _model, _dim: None,
+            now_ts=_NOW_TS,
         )
 
         titles = [item["title"] for item in result["items"]]
@@ -158,6 +183,7 @@ class RagTimeAwareRankingTests(unittest.IsolatedAsyncioTestCase):
             embedding_client_factory=lambda: _FakeEmbeddingClient(),
             qdrant_factory=lambda: _FakeQdrant(points),
             assert_meta_matches_fn=lambda _model, _dim: None,
+            now_ts=_NOW_TS,
         )
 
         self.assertTrue(result["time_aware_ranking"])
@@ -199,6 +225,7 @@ class RagTimeAwareRankingTests(unittest.IsolatedAsyncioTestCase):
             embedding_client_factory=lambda: _FakeEmbeddingClient(),
             qdrant_factory=lambda: _FakeQdrant(points),
             assert_meta_matches_fn=lambda _model, _dim: None,
+            now_ts=_NOW_TS,
         )
 
         titles = [item["title"] for item in result["items"]]
@@ -232,6 +259,7 @@ class RagTimeAwareRankingTests(unittest.IsolatedAsyncioTestCase):
             embedding_client_factory=lambda: _FakeEmbeddingClient(),
             qdrant_factory=lambda: _FakeQdrant(points),
             assert_meta_matches_fn=lambda _model, _dim: None,
+            now_ts=_NOW_TS,
         )
 
         titles = [item["title"] for item in result["items"]]
@@ -287,6 +315,7 @@ class RagTimeAwareRankingTests(unittest.IsolatedAsyncioTestCase):
             embedding_client_factory=lambda: _FakeEmbeddingClient(),
             qdrant_factory=lambda: _FakeQdrant(points),
             assert_meta_matches_fn=lambda _model, _dim: None,
+            now_ts=_NOW_TS,
         )
 
         titles = [item["title"] for item in result["items"]]
@@ -326,6 +355,7 @@ class RagTimeAwareRankingTests(unittest.IsolatedAsyncioTestCase):
                 embedding_client_factory=lambda: _FakeEmbeddingClient(),
                 qdrant_factory=lambda: fake,
                 assert_meta_matches_fn=lambda _model, _dim: None,
+                now_ts=_NOW_TS,
             )
         finally:
             rag_search.settings = original_settings
@@ -367,6 +397,7 @@ class RagTimeAwareRankingTests(unittest.IsolatedAsyncioTestCase):
                 embedding_client_factory=lambda: _FakeEmbeddingClient(),
                 qdrant_factory=lambda: fake,
                 assert_meta_matches_fn=lambda _model, _dim: None,
+                now_ts=_NOW_TS,
             )
         finally:
             rag_search.settings = original_settings
@@ -408,6 +439,7 @@ class RagTimeAwareRankingTests(unittest.IsolatedAsyncioTestCase):
                 embedding_client_factory=lambda: _FakeEmbeddingClient(),
                 qdrant_factory=lambda: fake,
                 assert_meta_matches_fn=lambda _model, _dim: None,
+                now_ts=_NOW_TS,
             )
         finally:
             rag_search.settings = original_settings
@@ -450,6 +482,7 @@ class RagTimeAwareRankingTests(unittest.IsolatedAsyncioTestCase):
                 embedding_client_factory=lambda: _FakeEmbeddingClient(),
                 qdrant_factory=lambda: fake,
                 assert_meta_matches_fn=lambda _model, _dim: None,
+                now_ts=_NOW_TS,
             )
         finally:
             rag_search.settings = original_settings
@@ -490,6 +523,7 @@ class RagTimeAwareRankingTests(unittest.IsolatedAsyncioTestCase):
                 embedding_client_factory=lambda: _FakeEmbeddingClient(),
                 qdrant_factory=lambda: fake,
                 assert_meta_matches_fn=lambda _model, _dim: None,
+                now_ts=_NOW_TS,
             )
         finally:
             rag_search.settings = original_settings
@@ -530,6 +564,7 @@ class RagTimeAwareRankingTests(unittest.IsolatedAsyncioTestCase):
                 embedding_client_factory=lambda: _FakeEmbeddingClient(),
                 qdrant_factory=lambda: fake,
                 assert_meta_matches_fn=lambda _model, _dim: None,
+                now_ts=_NOW_TS,
             )
         finally:
             rag_search.settings = original_settings

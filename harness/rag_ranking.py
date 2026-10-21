@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from datetime import datetime
+import os
 import re
 import time
 from typing import Any
@@ -163,11 +164,27 @@ def quality_score(item: dict[str, Any]) -> float:
     return max(0.05, min(1.0, score))
 
 
+def recency_reference_ts() -> float:
+    """Reference "now" for recency scoring.
+
+    Defaults to wall-clock time. A static corpus can pin it with
+    RAG_RECENCY_REFERENCE_DATE=YYYY-MM-DD; otherwise every "最近" query
+    turns stale once the newest document is older than the recency window.
+    """
+    value = (os.getenv("RAG_RECENCY_REFERENCE_DATE") or "").strip()
+    if value:
+        try:
+            return datetime.strptime(value, "%Y-%m-%d").timestamp()
+        except ValueError:
+            pass
+    return time.time()
+
+
 def recency_score(item: dict[str, Any], *, now_ts: float | None = None) -> float:
     ts = infer_publish_ts(item)
     if not ts:
         return 0.0
-    now = now_ts if now_ts is not None else time.time()
+    now = now_ts if now_ts is not None else recency_reference_ts()
     age_days = max(0.0, (now - ts) / 86400.0)
     if age_days <= 7:
         return 1.0

@@ -621,6 +621,7 @@ async def search_news_rag_v2(
     multi_query: bool | None = None,
     qdrant_top_k: int | None = None,
     rerank_top_k: int = 10,
+    now_ts: float | None = None,
 ) -> dict[str, Any]:
     """Hybrid retrieval: dense + title keyword + chunk keyword."""
     t_start = time.perf_counter()
@@ -733,7 +734,7 @@ async def search_news_rag_v2(
     merged, lq_filtered = _filter_severe_low_quality(merged, final_limit)
     stale_filtered = 0
     if _has_recent_intent(eff_intent_query, route):
-        merged, stale_filtered = _filter_stale_recent_items(merged, eff_intent_query, route)
+        merged, stale_filtered = _filter_stale_recent_items(merged, eff_intent_query, route, now_ts)
 
     # ── Step 7b: Date hard-filter with fallback ──
     merged, date_applied, date_fb = _apply_date_hard_filter(merged, intent.date_constraint)
@@ -759,10 +760,10 @@ async def search_news_rag_v2(
             eff_collection, source_values,
         )
         body_items = _points_to_items(body_pts)
-        body_items, _ = _rerank_items(query, body_items, eff_ranking, route)
+        body_items, _ = _rerank_items(query, body_items, eff_ranking, route, now_ts)
         body_items, body_lq = _filter_severe_low_quality(body_items, eff_body_slots)
         if _has_recent_intent(eff_intent_query, route):
-            body_items, body_stale = _filter_stale_recent_items(body_items, eff_intent_query, route)
+            body_items, body_stale = _filter_stale_recent_items(body_items, eff_intent_query, route, now_ts)
         items, body_added = _with_body_fallback(reranked, body_items, final_limit, eff_body_slots)
     else:
         items = reranked[:final_limit]

@@ -181,11 +181,17 @@ def _recent_recency_floor(query: str, route: Any) -> float:
     return 0.0
 
 
-def _rerank_items(query: str, items: list[dict], ranking: str, route: Any) -> tuple[list[dict], bool]:
+def _rerank_items(
+    query: str,
+    items: list[dict],
+    ranking: str,
+    route: Any,
+    now_ts: float | None = None,
+) -> tuple[list[dict], bool]:
     if ranking != "hybrid":
         return [normalize_publish_metadata(item) for item in items], False
     if _has_recent_intent(query, route):
-        return time_aware_hybrid_rerank(query, items), True
+        return time_aware_hybrid_rerank(query, items, now_ts=now_ts), True
     return quality_aware_hybrid_rerank(query, items), False
 
 
@@ -222,14 +228,19 @@ def _title_overlaps_query(item: dict, query_compact: str) -> bool:
     return best >= 6
 
 
-def _filter_stale_recent_items(items: list[dict], query: str, route: Any) -> tuple[list[dict], int]:
+def _filter_stale_recent_items(
+    items: list[dict],
+    query: str,
+    route: Any,
+    now_ts: float | None = None,
+) -> tuple[list[dict], int]:
     if not items:
         return items, 0
     floor = _recent_recency_floor(query, route)
     query_compact = _compact_query(query)
     filtered = [
         item for item in items
-        if recency_score(item) >= floor or _title_overlaps_query(item, query_compact)
+        if recency_score(item, now_ts=now_ts) >= floor or _title_overlaps_query(item, query_compact)
     ]
     return filtered, len(items) - len(filtered)
 
@@ -362,6 +373,7 @@ async def search_news_rag(
     embedding_client_factory: Callable[[], Any] = get_embedding_client,
     qdrant_factory: Callable[[], Any] = get_qdrant,
     assert_meta_matches_fn: Callable[[str, int], None] = assert_meta_matches,
+    now_ts: float | None = None,
 ) -> dict:
     final_limit = max(1, min(int(limit), 80))
     candidate_limit = max(final_limit, int(settings.rag_recall_limit or 50))
@@ -388,11 +400,11 @@ async def search_news_rag(
         qdrant, vector, candidate_limit, effective_chunk_type_filter, collection_name, source_values
     )
     summary_items = _points_to_items(summary_points)
-    summary_items, time_aware_ranking = _rerank_items(query, summary_items, effective_ranking, route)
+    summary_items, time_aware_ranking = _rerank_items(query, summary_items, effective_ranking, route, now_ts)
     summary_items, summary_low_quality_filtered = _filter_severe_low_quality(summary_items, final_limit)
     stale_filtered = 0
     if _has_recent_intent(query, route):
-        summary_items, stale_filtered = _filter_stale_recent_items(summary_items, query, route)
+        summary_items, stale_filtered = _filter_stale_recent_items(summary_items, query, route, now_ts)
     summary_items = _apply_source_preference(query, summary_items)
 
     body_added = 0
@@ -403,10 +415,10 @@ async def search_news_rag(
             qdrant, vector, candidate_limit, "body", collection_name, source_values
         )
         body_items = _points_to_items(body_points)
-        body_items, _body_time_aware = _rerank_items(query, body_items, effective_ranking, route)
+        body_items, _body_time_aware = _rerank_items(query, body_items, effective_ranking, route, now_ts)
         body_items, body_low_quality_filtered = _filter_severe_low_quality(body_items, effective_body_slots)
         if _has_recent_intent(query, route):
-            body_items, body_stale_filtered = _filter_stale_recent_items(body_items, query, route)
+            body_items, body_stale_filtered = _filter_stale_recent_items(body_items, query, route, now_ts)
         items, body_added = _with_body_fallback(summary_items, body_items, final_limit, effective_body_slots)
     else:
         items = summary_items[:final_limit]

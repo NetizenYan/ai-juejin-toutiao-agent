@@ -28,6 +28,7 @@ from harness.tool_registry import ToolPolicyError, validate_tool_arguments
 from harness.web_mcp_client import web_session
 from harness.rag_mcp_client import rag_session
 from harness.reranker import rerank
+from harness.rag_ranking import recency_reference_ts
 from harness.rag_index import add_external_doc
 from harness.external_evidence import verify_external_evidence
 from harness.query_understanding import understand_user_query
@@ -566,7 +567,7 @@ def _aggregate_parents(reranked_chunks: list[dict], top_k: int) -> list[dict]:
 
     Recall 归因到 parent：只要某新闻任一 chunk 命中，该新闻即进结果（父子索引的核心）。
     """
-    now = time.time()
+    now = recency_reference_ts()
     best: dict = {}
     for ch in reranked_chunks:
         nid = ch.get("id")
