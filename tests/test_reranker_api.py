@@ -1,5 +1,6 @@
 import asyncio
 import unittest
+import unittest.mock
 
 
 api_reranker = __import__("harness.reranker_api", fromlist=["reranker_api"])
@@ -67,6 +68,37 @@ class SiliconFlowApiRerankerTests(unittest.TestCase):
         self.assertEqual(meta["reranker_used"], "api_reranker_failed")
         self.assertIn("service unavailable", meta["reason"])
         self.assertNotIn("secret-value", repr(meta))
+
+
+class HfApiRerankerTests(unittest.TestCase):
+    def test_hf_api_format_sends_minimal_payload_without_key_and_reads_score(self):
+        captured = {}
+
+        def fake_transport(url, headers, payload, timeout):
+            captured.update({"url": url, "headers": headers, "payload": payload})
+            return {"results": [{"index": 1, "score": 0.97}, {"index": 0, "score": 0.03}]}
+
+        items = [
+            {"id": "a", "title": "A title", "summary": "less relevant"},
+            {"id": "b", "title": "B title", "summary": "most relevant"},
+        ]
+        with unittest.mock.patch.dict("os.environ", {"SILICONFLOW_API_KEY": "", "RERANKER_API_KEY": ""}):
+            ranked, meta = asyncio.run(api_reranker.rerank_with_api(
+                "most relevant",
+                items,
+                top_k=2,
+                base_url="http://hf-api:8000",
+                model="BAAI/bge-reranker-v2-m3",
+                transport=fake_transport,
+                api_format="hf_api",
+            ))
+
+        self.assertEqual(captured["url"], "http://hf-api:8000/rerank")
+        self.assertEqual(set(captured["payload"]), {"model", "query", "documents"})
+        self.assertNotIn("Authorization", captured["headers"])
+        self.assertEqual([item["id"] for item in ranked], ["b", "a"])
+        self.assertEqual(ranked[0]["rerank_score"], 0.97)
+        self.assertEqual(meta["reranker_used"], "hf_api")
 
 
 if __name__ == "__main__":

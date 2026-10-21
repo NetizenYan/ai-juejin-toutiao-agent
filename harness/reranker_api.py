@@ -76,6 +76,7 @@ def _rank_from_response(
     top_k: int,
     model: str,
     elapsed_ms: float,
+    reranker_used: str = "siliconflow_api",
 ) -> tuple[list[dict[str, Any]], dict[str, Any]]:
     seen: set[int] = set()
     ranked_entries: list[tuple[float, int, dict[str, Any]]] = []
@@ -87,11 +88,12 @@ def _rank_from_response(
         if index < 0 or index >= len(items) or index in seen:
             continue
         seen.add(index)
-        score = float(result.get("relevance_score") or 0.0)
+        # SiliconFlow/Cohere style returns relevance_score; the local hf-api service returns score.
+        score = float(result.get("relevance_score", result.get("score")) or 0.0)
         copy = dict(items[index])
         copy["rerank_score"] = round(score, 6)
         copy["api_rerank_score"] = round(score, 6)
-        copy["reranker_used"] = "siliconflow_api"
+        copy["reranker_used"] = reranker_used
         copy["reranker_model"] = model
         copy["reranker_rank"] = rank_index + 1
         ranked_entries.append((score, -rank_index, copy))
@@ -102,12 +104,12 @@ def _rank_from_response(
         if index in seen:
             continue
         copy = dict(item)
-        copy.setdefault("reranker_used", "siliconflow_api_unscored_tail")
+        copy.setdefault("reranker_used", f"{reranker_used}_unscored_tail")
         ranked.append(copy)
 
     meta = {
         "used": True,
-        "reranker_used": "siliconflow_api",
+        "reranker_used": reranker_used,
         "model": model,
         "api_calls": 1,
         "candidate_count": len(items),
@@ -129,7 +131,10 @@ async def rerank_with_api(
     model: str | None = None,
     timeout_seconds: float | None = None,
     transport: RerankTransport | None = None,
+    api_format: str = "siliconflow",
 ) -> tuple[list[dict[str, Any]], dict[str, Any]]:
+    """api_format: "siliconflow" (Bearer key, Cohere-style payload) or "hf_api"
+    (local hf-api service: no key, payload limited to model/query/documents)."""
     if not query or not items:
         return list(items[:top_k]), {
             "used": False,
@@ -139,8 +144,9 @@ async def rerank_with_api(
         }
 
     eff_top_k = max(1, min(int(top_k), len(items)))
+    hf_api = api_format == "hf_api"
     eff_key = api_key or os.getenv("SILICONFLOW_API_KEY") or os.getenv("RERANKER_API_KEY")
-    if not eff_key:
+    if not eff_key and not hf_api:
         return _fallback(items, eff_top_k, "missing_api_key")
 
     eff_model = model or DEFAULT_MODEL
@@ -148,15 +154,17 @@ async def rerank_with_api(
         "model": eff_model,
         "query": query,
         "documents": [_document_text(item) for item in items],
-        "return_documents": False,
-        "top_n": len(items),
-        "max_chunks_per_doc": 1024,
-        "overlap_tokens": 80,
     }
-    headers = {
-        "Authorization": f"Bearer {eff_key}",
-        "Content-Type": "application/json",
-    }
+    if not hf_api:
+        payload.update({
+            "return_documents": False,
+            "top_n": len(items),
+            "max_chunks_per_doc": 1024,
+            "overlap_tokens": 80,
+        })
+    headers = {"Content-Type": "application/json"}
+    if eff_key:
+        headers["Authorization"] = f"Bearer {eff_key}"
     call = transport or _post_json
     start = time.perf_counter()
     try:
@@ -172,7 +180,14 @@ async def rerank_with_api(
 
     elapsed_ms = (time.perf_counter() - start) * 1000
     try:
-        return _rank_from_response(items, response, top_k=eff_top_k, model=eff_model, elapsed_ms=elapsed_ms)
+        return _rank_from_response(
+            items,
+            response,
+            top_k=eff_top_k,
+            model=eff_model,
+            elapsed_ms=elapsed_ms,
+            reranker_used="hf_api" if hf_api else "siliconflow_api",
+        )
     except Exception as exc:  # noqa: BLE001 - malformed provider response should not abort eval.
         return _fallback(items, eff_top_k, f"invalid_api_response: {exc}")
 

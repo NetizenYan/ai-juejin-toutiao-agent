@@ -55,12 +55,18 @@ async def rerank(query: str, items: list[dict], top_k: int = 5) -> list[dict]:
         return items[:top_k]
     provider = (os.getenv("RERANKER_PROVIDER") or "").strip().lower()
     api_enabled = (os.getenv("RERANKER_API_ENABLED") or "").strip().lower() in {"1", "true", "yes", "on"}
-    if provider in {"api", "siliconflow"} or api_enabled:
+    if provider in {"api", "siliconflow", "hf_api"} or api_enabled:
+        hf_api = provider == "hf_api"
         ranked, _meta = await rerank_with_api(
             query,
             items,
             top_k=top_k,
-            model=os.getenv("RERANKER_API_MODEL", "Pro/BAAI/bge-reranker-v2-m3"),
+            base_url=os.getenv("RERANKER_API_BASE_URL") or None,
+            model=os.getenv(
+                "RERANKER_API_MODEL",
+                "BAAI/bge-reranker-v2-m3" if hf_api else "Pro/BAAI/bge-reranker-v2-m3",
+            ),
+            api_format="hf_api" if hf_api else "siliconflow",
         )
         return ranked
     try:
