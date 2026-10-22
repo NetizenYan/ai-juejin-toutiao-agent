@@ -30,14 +30,17 @@ class SiliconFlowApiRerankerTests(unittest.TestCase):
                 ]
             }
 
-        ranked, meta = asyncio.run(api_reranker.rerank_with_api(
-            "most relevant",
-            self._items(),
-            top_k=2,
-            api_key="test-key",
-            model="Pro/BAAI/bge-reranker-v2-m3",
-            transport=fake_transport,
-        ))
+        # DEFAULT_BASE_URL is read from RERANKER_API_BASE_URL at import; pin it so a local .env
+        # (e.g. one pointing at hf-api) does not change what this test exercises.
+        with unittest.mock.patch.object(api_reranker, "DEFAULT_BASE_URL", "https://api.siliconflow.cn/v1"):
+            ranked, meta = asyncio.run(api_reranker.rerank_with_api(
+                "most relevant",
+                self._items(),
+                top_k=2,
+                api_key="test-key",
+                model="Pro/BAAI/bge-reranker-v2-m3",
+                transport=fake_transport,
+            ))
 
         self.assertEqual([item["id"] for item in ranked], ["b", "a"])
         self.assertEqual(ranked[0]["rerank_score"], 0.91)
