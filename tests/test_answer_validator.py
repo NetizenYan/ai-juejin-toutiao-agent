@@ -1,7 +1,7 @@
 import unittest
 
 from harness.answer_contract import AnswerContract
-from harness.answer_validator import extract_citations, is_refusal, validate_answer
+from harness.answer_validator import asks_investment_certainty, extract_citations, is_refusal, validate_answer
 
 
 class AnswerValidatorTests(unittest.TestCase):
@@ -158,6 +158,31 @@ class AnswerValidatorTests(unittest.TestCase):
             self._contract(),
             self._evidence(),
             query="那这个是不是一定利好半导体？",
+        )
+
+        self.assertTrue(result.passed)
+
+    def test_detects_investment_certainty_phrasings_beyond_fixed_terms(self):
+        for query in (
+            "新质生产力是不是必然带动半导体股票上涨？",
+            "根据这些新质生产力报道，能不能直接推荐几只最值得买的股票？",
+            "相关政策是不是能保证科技基金收益上涨？",
+            "如果只看经济日报的报道，应该加仓哪些行业基金？",
+        ):
+            self.assertTrue(asks_investment_certainty(query), query)
+        for query in (
+            "新质生产力对半导体板块可能有什么影响？请保守表达并带引用。",
+            "最近高质量发展和新质生产力有什么新闻？",
+            "推荐几篇新质生产力的文章",
+        ):
+            self.assertFalse(asks_investment_certainty(query), query)
+
+    def test_declining_to_recommend_stocks_counts_as_guard(self):
+        result = validate_answer(
+            "无法直接推荐股票，相关报道主要讲新质生产力推动高质量发展。[news:jjrb:8dcc9e6349959132]",
+            self._contract(),
+            self._evidence(),
+            query="根据这些报道，能不能直接推荐几只最值得买的股票？",
         )
 
         self.assertTrue(result.passed)

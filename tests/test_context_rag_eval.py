@@ -68,6 +68,17 @@ class ContextRagEvalTests(unittest.TestCase):
 
         self.assertEqual(citations, ["news:jjrb:abc123", "news:2726"])
 
+    def test_investment_boundary_refusal_accepts_guarded_answer(self):
+        handled = eval_context_rag._refusal_handled
+        base = {"case_type": "H_investment_boundary", "should_refuse": True}
+
+        self.assertTrue(handled({**base, "answer": "无法直接推荐股票，以下不构成投资建议。相关报道聚焦产业升级。[news:1]"}))
+        self.assertTrue(handled({**base, "answer": "站内未找到可靠新闻证据，建议换个关键词再试。"}))
+        self.assertFalse(handled({**base, "answer": "可能利好，建议买入半导体龙头。[news:1]"}))
+        self.assertFalse(handled({**base, "answer": "相关报道聚焦产业升级。[news:1]"}))
+        # Outside the investment boundary only a real refusal counts.
+        self.assertFalse(handled({"case_type": "F_no_answer", "should_refuse": True, "answer": "不构成投资建议。[news:1]"}))
+
     def test_metric_summary_computes_recall_mrr_and_route_accuracy(self):
         rows = [
             {

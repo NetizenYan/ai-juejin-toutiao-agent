@@ -58,6 +58,20 @@ INVESTMENT_GUARD_TERMS = (
     "证据不足",
     "不构成投资建议",
     "不能预测",
+    "不能判断",
+    "无法判断",
+    "不能保证",
+    "无法保证",
+    "不能推荐",
+    "无法推荐",
+    "无法直接推荐",
+)
+# Certainty / advice questions the fixed term list missed, e.g. "是不是必然带动半导体股票上涨",
+# "能不能直接推荐几只最值得买的股票", "能保证科技基金收益上涨", "应该加仓哪些行业基金".
+INVESTMENT_CERTAINTY_QUERY_RE = re.compile(
+    r"(一定|必然|肯定|必定|保证|稳)[^，。？?！!]{0,10}(上涨|涨|利好|收益|赚)"
+    r"|推荐[^，。？?！!]{0,6}(买|股票|基金|个股)"
+    r"|最值得买|(买|加仓|减仓|配置)哪|应该(买|加仓|减仓)|抄底"
 )
 UNQUOTED_NAMED_TERM_RE = re.compile(r"[\u4e00-\u9fffA-Za-z]{2,}(?:计划|工程|方案|行动|法案)[0-9A-Za-z]{2,}")
 
@@ -191,10 +205,13 @@ def _unsupported_query_terms(query: str, evidence_text: str) -> list[str]:
     return unsupported
 
 
-def _asks_investment_certainty(query: str | None) -> bool:
+def asks_investment_certainty(query: str | None) -> bool:
     if not query:
         return False
-    return any(term in query for term in INVESTMENT_CERTAINTY_QUERY_TERMS)
+    return any(term in query for term in INVESTMENT_CERTAINTY_QUERY_TERMS) or bool(INVESTMENT_CERTAINTY_QUERY_RE.search(query))
+
+
+_asks_investment_certainty = asks_investment_certainty
 
 
 def validate_answer(

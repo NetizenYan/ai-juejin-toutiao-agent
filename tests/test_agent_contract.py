@@ -26,6 +26,30 @@ class AgentContractTests(unittest.TestCase):
     def test_investment_recommendation_boundary_is_not_article_recommendation(self):
         self.assertEqual(detect_intent("新质生产力 新能源 那它是不是可以推荐我买新能源股票？"), "news_qa")
 
+    def test_deterministic_answer_for_certainty_question_leads_with_risk_warning(self):
+        from harness.answer_contract import AnswerContract
+        from harness.answer_validator import validate_answer
+
+        results = [{"items": [{"id": "jjrb:001", "title": "新质生产力推动半导体产业升级", "summary": "产业升级。"}]}]
+        contract = AnswerContract()
+        query = "新质生产力是不是必然带动半导体股票上涨？"
+
+        answer = agent._deterministic_evidence_answer(results, contract, query=query)
+
+        self.assertTrue(answer.startswith(agent.INVESTMENT_GUARD_PREFIX))
+        self.assertIn("[news:jjrb:001]", answer)
+        self.assertTrue(validate_answer(answer, contract, agent._build_evidence_pack(results), query=query).passed)
+        plain = agent._deterministic_evidence_answer(results, contract, query="新质生产力有什么新闻？")
+        self.assertNotIn(agent.INVESTMENT_GUARD_PREFIX, plain)
+
+    def test_certainty_question_refusal_explains_investment_boundary(self):
+        from harness.answer_contract import AnswerContract
+
+        answer = agent._deterministic_evidence_answer([], AnswerContract(), query="应该加仓哪些行业基金？")
+
+        self.assertIn("不构成投资建议", answer)
+        self.assertTrue(agent._looks_like_refusal(answer))
+
     def test_fallback_routes_news_question_to_search_tool(self):
         calls = build_fallback_tool_calls("帮我找一下AI芯片相关资讯")
 

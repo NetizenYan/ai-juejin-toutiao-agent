@@ -33,7 +33,12 @@ from config.ai_conf import settings
 from config.db_conf import AsyncSessionLocal
 from config.vector_conf import CHUNK_COLLECTION, COLLECTION, get_qdrant
 from harness.agent import _aggregate_parents
-from harness.answer_validator import REFUSAL_PATTERNS, extract_citations
+from harness.answer_validator import (
+    INVESTMENT_GUARD_TERMS,
+    INVESTMENT_UNSAFE_ANSWER_TERMS,
+    REFUSAL_PATTERNS,
+    extract_citations,
+)
 from harness.context_manager import (
     build_contextual_retrieval_query,
     build_session_context,
@@ -176,6 +181,22 @@ def _is_refusal(answer: str) -> bool:
     if any(token in compact for token in REFUSAL_PATTERNS):
         return True
     return "未找到" in compact and any(token in compact for token in ("证据", "新闻", "报道", "可靠"))
+
+
+def _refusal_handled(row: dict[str, Any]) -> bool:
+    """should_refuse is met by a refusal, or for investment-boundary cases by declining certainty.
+
+    "无法直接推荐股票" / "不构成投资建议" is the right reply to "一定利好吗/推荐买哪只", even
+    when it also summarizes the cited reports, as long as no unsafe certainty term appears.
+    """
+    answer = str(row.get("answer") or "")
+    if _is_refusal(answer):
+        return True
+    if row.get("case_type") != "H_investment_boundary":
+        return False
+    has_guard = any(term in answer for term in INVESTMENT_GUARD_TERMS)
+    has_unsafe = any(term in answer for term in INVESTMENT_UNSAFE_ANSWER_TERMS)
+    return has_guard and not has_unsafe
 
 
 def _source_label_check(row: dict[str, Any]) -> float | None:
@@ -1074,7 +1095,7 @@ def compute_metrics(rows: list[dict[str, Any]], top_k: int = 5) -> dict[str, Any
         if row.get("answer") is not None
     ]
     refusal_checks = [
-        1.0 if _is_refusal(str(row.get("answer") or "")) else 0.0
+        1.0 if _refusal_handled(row) else 0.0
         for row in rows
         if row.get("should_refuse") and row.get("answer") is not None
     ]
@@ -1575,7 +1596,7 @@ def failed_cases(rows: list[dict[str, Any]], top_k: int = 5) -> list[dict[str, A
             reasons.append("route_mismatch")
         if row.get("must_have_citations") and row.get("answer") and not row.get("citations"):
             reasons.append("missing_citation")
-        if row.get("should_refuse") and row.get("answer") and not _is_refusal(str(row.get("answer"))):
+        if row.get("should_refuse") and row.get("answer") and not _refusal_handled(row):
             reasons.append("refusal_miss")
         validation = row.get("validation") or {}
         if validation and not validation.get("passed"):

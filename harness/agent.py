@@ -33,7 +33,7 @@ from harness.rag_index import add_external_doc
 from harness.external_evidence import verify_external_evidence
 from harness.query_understanding import understand_user_query
 from harness.answer_contract import build_answer_contract, parse_enforce_routes, resolve_validation_mode, AnswerContract
-from harness.answer_validator import AnswerValidationResult, is_refusal, validate_answer
+from harness.answer_validator import AnswerValidationResult, asks_investment_certainty, is_refusal, validate_answer
 from harness.agent_orchestrator import build_agent_orchestration_plan
 from harness.anchor_resolver import (
     confirmed_anchor_from_user_selection,
@@ -1043,6 +1043,18 @@ def _no_answer_response() -> str:
     return "站内未找到可靠新闻证据，建议换个关键词再试。"
 
 
+INVESTMENT_GUARD_PREFIX = "仅凭新闻报道不能判断涨跌或收益，以下不构成投资建议。"
+
+
+def _investment_guard_refusal() -> str:
+    # Still a refusal (short, citation-free), but says why instead of "换个关键词".
+    return "仅凭新闻报道不能判断涨跌或收益，不构成投资建议；站内未找到可直接支持该判断的新闻证据。"
+
+
+def _refusal_for_query(query: str | None) -> str:
+    return _investment_guard_refusal() if asks_investment_certainty(query) else _no_answer_response()
+
+
 def _looks_like_refusal(answer: str) -> bool:
     # Same definition as the validator, so a long answer with one refusal phrase is not waved through.
     return is_refusal(answer)
@@ -1209,10 +1221,16 @@ def _quoted_terms_supported(query: str, evidence_pack: list[dict]) -> bool:
     return all(term in evidence_text for term in quoted_terms)
 
 
-def _deterministic_evidence_answer(results: list[dict], contract: AnswerContract) -> str:
+def _deterministic_evidence_answer(
+    results: list[dict],
+    contract: AnswerContract,
+    query: str | None = None,
+) -> str:
     evidence = _build_evidence_pack(results)
     if not evidence:
-        return _no_answer_response()
+        return _refusal_for_query(query)
+    # Certainty / advice questions: the summary may only follow a risk warning.
+    guard = INVESTMENT_GUARD_PREFIX if asks_investment_certainty(query) else ""
 
     max_allowed = floor(contract.max_chars * 1.05) if contract.max_chars else None
     max_points = max(1, min(contract.max_points or 3, 3))
@@ -1223,15 +1241,15 @@ def _deterministic_evidence_answer(results: list[dict], contract: AnswerContract
             title = _brief_text(item.get("title") or "相关新闻", limit=18).rstrip("...")
             titles.append(title)
         citation = f"[{evidence[0]['ref']}]"
-        answer = f"近期相关报道主要聚焦{'、'.join(titles)}。{citation}"
+        answer = f"{guard}近期相关报道主要聚焦{'、'.join(titles)}。{citation}"
         if max_allowed is None or len(answer) <= max_allowed:
             return answer
 
     citation = f"[{evidence[0]['ref']}]"
-    prefix = "近期有相关报道。"
+    prefix = f"{guard}近期有相关报道。"
     if max_allowed is None or len(prefix + citation) <= max_allowed:
         return prefix + citation
-    return _no_answer_response()
+    return _refusal_for_query(query)
 
 
 async def _complete_with_fallback(
@@ -1240,12 +1258,13 @@ async def _complete_with_fallback(
     tool_results: list[dict],
     contract: AnswerContract,
     timeout_seconds: float,
+    query: str | None = None,
 ) -> str:
     try:
         return await asyncio.wait_for(client.complete(messages), timeout=max(0.001, timeout_seconds))
     except Exception:  # noqa: BLE001 - keep SSE responsive when the local model is slow or unavailable.
         if contract.evidence_only:
-            return _deterministic_evidence_answer(tool_results, contract)
+            return _deterministic_evidence_answer(tool_results, contract, query=query)
         return _fallback_answer(tool_results)
 
 
@@ -1506,6 +1525,7 @@ async def run_chat(history_messages: list[dict], db: Optional[AsyncSession] = No
         tool_results,
         contract,
         timeout_seconds=settings.llm_timeout_seconds,
+        query=latest_user,
     )
     answer = _ensure_confirmed_anchor_warning(answer, session_context)
 
@@ -1517,7 +1537,7 @@ async def run_chat(history_messages: list[dict], db: Optional[AsyncSession] = No
     rewrite_count = 0
     validation = validate_answer(answer, contract, evidence_pack, query=latest_user)
     if _should_force_no_answer(validation):
-        answer = _no_answer_response()
+        answer = _refusal_for_query(latest_user)
         validation = validate_answer(answer, contract, evidence_pack, query=latest_user)
 
     if mode == "enforce" and not validation.passed and settings.answer_rewrite_on_fail:
@@ -1535,21 +1555,24 @@ async def run_chat(history_messages: list[dict], db: Optional[AsyncSession] = No
                 break
 
     if mode == "enforce" and not validation.passed:
-        answer = _deterministic_evidence_answer(tool_results, contract)
+        answer = _deterministic_evidence_answer(tool_results, contract, query=latest_user)
         validation = validate_answer(answer, contract, evidence_pack, query=latest_user)
 
+    # Declining a certainty / advice question is the correct answer, so it is not replaced
+    # with an evidence summary.
     if (
         mode == "enforce"
         and validation.passed
         and evidence_pack
         and _looks_like_refusal(answer)
+        and not asks_investment_certainty(latest_user)
         and _quoted_terms_supported(latest_user, evidence_pack)
     ):
-        answer = _deterministic_evidence_answer(tool_results, contract)
+        answer = _deterministic_evidence_answer(tool_results, contract, query=latest_user)
         validation = validate_answer(answer, contract, evidence_pack, query=latest_user)
 
     if mode == "enforce" and not validation.passed:
-        answer = _no_answer_response()
+        answer = _refusal_for_query(latest_user)
         validation = validate_answer(answer, contract, [], query=latest_user)
 
     # Keep diagnostics aligned with the exact text emitted to the user.
