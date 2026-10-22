@@ -108,7 +108,7 @@ class AISettings:
     # Embedding（Phase 4 RAG）
     embedding_base_url: str = os.getenv("EMBEDDING_BASE_URL", "http://localhost:11434/v1")
     embedding_api_key: str = field(default_factory=lambda: _first_env(("EMBEDDING_API_KEY", "SILICONFLOW_API_KEY"), "ollama"))
-    embedding_model: str = os.getenv("EMBEDDING_MODEL", "qwen3-embedding:4b")
+    embedding_model: str = os.getenv("EMBEDDING_MODEL", "bge-m3")  # BAAI/bge-m3, 1024 维
 
     # RAG defaults are summary-first; body fallback is enabled by Query Router only.
     rag_query_router_enabled: bool = _bool("RAG_QUERY_ROUTER_ENABLED", True)
