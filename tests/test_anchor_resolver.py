@@ -40,6 +40,23 @@ class AnchorResolverTests(unittest.TestCase):
         self.assertEqual(resolution.candidates[0].source_credibility, "high")
         self.assertTrue(resolution.requires_user_confirmation)
 
+    def test_corpus_source_codes_match_paper_names(self):
+        # Econ corpus payloads carry source="jjrb"; the query says 经济日报.
+        items = [{
+            "id": "jjrb:002",
+            "evidence_id": "news:jjrb:002",
+            "title": "进一步深化对新质生产力的认识",
+            "summary": "新质生产力。",
+            "source": "jjrb",
+            "publish_time": "2026-05-15 00:00:00",
+        }]
+
+        resolution = resolve_anchor_candidates("我记得2026年5月经济日报发过一篇关于新质生产力的新闻", items)
+
+        self.assertEqual(resolution.candidates[0].match_confidence, "high")
+        self.assertIn("source_match", resolution.candidates[0].match_reasons)
+        self.assertEqual(resolution.candidates[0].source_name, "经济日报")
+
     def test_low_confidence_items_become_leads_not_candidates(self):
         items = [
             {

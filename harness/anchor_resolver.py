@@ -46,6 +46,8 @@ TOPIC_TERMS = (
 OCR_QUERY_MARKERS = ("OCR", "ocr", "截图", "截屏", "图片", "页面截图", "外网截图")
 LOW_CREDIBILITY_SOURCES = {"x", "instagram", "ins", "未知来源", "unknown"}
 HIGH_CREDIBILITY_SOURCES = {"经济日报", "人民日报", "新闻联播", "新华社"}
+# Corpus payloads store source codes ("jjrb") and scoped ids ("news:jjrb:..."); queries name the paper.
+SOURCE_CODE_LABELS = {"jjrb": "经济日报", "rmrb": "人民日报", "cctv": "新闻联播"}
 YEAR_MONTH_RE = re.compile(r"(20[12]\d)\s*年\s*(\d{1,2})\s*月")
 YEAR_RE = re.compile(r"(20[12]\d)\s*年")
 CONFIRMATION_ITEM_RE = re.compile(r"^\s*(\d+)\.\s*(.*?)\s*\|\s*(.*?)\s*\|\s*《(.*?)》\s*$")
@@ -134,6 +136,17 @@ def _item_text(item: dict[str, Any]) -> str:
     )
 
 
+def _source_display_name(source_name: str, evidence_ref: str) -> str:
+    code = (source_name or "").strip().lower()
+    if code in SOURCE_CODE_LABELS:
+        return SOURCE_CODE_LABELS[code]
+    if not code:
+        parts = (evidence_ref or "").split(":")
+        if len(parts) >= 3 and parts[0] == "news" and parts[1].lower() in SOURCE_CODE_LABELS:
+            return SOURCE_CODE_LABELS[parts[1].lower()]
+    return source_name
+
+
 def _source_credibility(source_name: str, evidence_ref: str) -> tuple[str, str]:
     lowered = (source_name or "").strip().lower()
     if evidence_ref.startswith("news:") or source_name in HIGH_CREDIBILITY_SOURCES:
@@ -151,8 +164,8 @@ def _candidate_from_item(
 ) -> AnchorCandidate:
     text = _item_text(item)
     title = str(item.get("title") or "")
-    source_name = str(item.get("source") or "")
     evidence_ref = str(item.get("evidence_id") or item.get("source_url") or item.get("url") or item.get("id") or "")
+    source_name = _source_display_name(str(item.get("source") or ""), evidence_ref)
     published_at = str(item.get("publish_time") or item.get("published_at") or "")
     snippet = str(item.get("summary") or item.get("snippet") or item.get("text") or "")
     acquisition_method = str(item.get("acquisition_method") or ("rag" if evidence_ref.startswith("news:") else "web"))
