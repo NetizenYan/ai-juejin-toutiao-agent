@@ -43,6 +43,8 @@ env_snapshots/
 
 # Raw news corpora (经济日报 CSV / 人民日报 xlsx / 新闻联播 zip, several GB). Never commit.
 data/raw/
+# Corpora derived from data/raw by scripts/build_econ_corpus.py (rebuildable).
+data/processed/
 
 # Local databases, dumps, and generated data
 *.db
