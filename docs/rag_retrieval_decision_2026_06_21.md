@@ -40,3 +40,19 @@ RAG_QUERY_ROUTER_ENABLED=false
 RAG_BODY_FALLBACK_SLOTS=0
 RAG_RANKING=hybrid
 ```
+
+## 2026-10-22 更新：默认改为同时检索摘要块和正文块
+
+`RAG_CHUNK_TYPE_FILTER` 默认值从 `summary` 改为空（摘要块 + 正文块一起参与向量检索）。
+
+背景变化：embedding 从 qwen3-embedding:4b 换成 BAAI/bge-m3，精排 BAAI/bge-reranker-v2-m3 修复后真正生效，Qdrant 补建了 `chunk_type` payload 索引（此前过滤检索会漏召回）。6 月"正文检索拉低标题类问题 MRR"的结论在新配置下不再成立。
+
+评测（retrieve-only，top-5，bge-m3 + bge-reranker-v2-m3，评测集为迁移后的 expanded115 / splits）：
+
+| 数据集 | 计分题 | Hit@5 summary → 全部块 | MRR | EvidenceRecall@5 |
+| --- | ---: | --- | --- | --- |
+| expanded115 | 74 | 0.784 → 0.865 | 0.718 → 0.747 | 0.712 → 0.764 |
+| train split | 48 | 0.708 → 0.833 | 0.638 → 0.673 | 0.622 → 0.694 |
+| heldout split | 26 | 0.923 → 0.923 | 0.865 → 0.885 | 0.878 → 0.891 |
+
+按题型无退步：精确标题问答保持 19/19，相似干扰项 0/8 → 4/8；不应回答题平均返回条数 4.5 → 4.3。代价是检索 P50 延迟 284 → 356 ms。候选池从 50 扩到 100 的对照实验反而变差（Hit@5 0.770），未采用。

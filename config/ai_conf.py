@@ -115,7 +115,8 @@ class AISettings:
     rag_search_version: str = normalize_rag_search_version(os.getenv("RAG_SEARCH_VERSION", "v1"))
     rag_ranking: str = normalize_rag_ranking(os.getenv("RAG_RANKING", "hybrid"))
     rag_recall_limit: int = _int("RAG_RECALL_LIMIT", 50)
-    rag_chunk_type_filter: str | None = normalize_rag_chunk_type_filter(os.getenv("RAG_CHUNK_TYPE_FILTER", "summary"))
+    # 默认同时检索摘要块和正文块（2026-10 评测：bge-m3 + 精排下 Hit@5 0.784 -> 0.865，见 docs/rag_retrieval_decision）
+    rag_chunk_type_filter: str | None = normalize_rag_chunk_type_filter(os.getenv("RAG_CHUNK_TYPE_FILTER", ""))
     rag_expand_body_evidence: bool = _bool("RAG_EXPAND_BODY_EVIDENCE", True)
     rag_body_chunks_per_parent: int = _int("RAG_BODY_CHUNKS_PER_PARENT", 1)
     rag_body_fallback_slots: int = _int("RAG_BODY_FALLBACK_SLOTS", 0)
