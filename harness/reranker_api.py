@@ -19,6 +19,9 @@ DEFAULT_BASE_URL = os.getenv("RERANKER_API_BASE_URL", "https://api.siliconflow.c
 DEFAULT_MODEL = os.getenv("RERANKER_API_MODEL", "Pro/BAAI/bge-reranker-v2-m3")
 DEFAULT_TIMEOUT_SECONDS = float(os.getenv("RERANKER_API_TIMEOUT_SECONDS", "90"))
 DEFAULT_DOCUMENT_MAX_CHARS = int(os.getenv("RERANKER_API_DOCUMENT_MAX_CHARS", "1600"))
+# Limits of the local ai-dev-stack hf-api /rerank endpoint (it returns 422 beyond them).
+HF_API_MAX_DOCUMENTS = int(os.getenv("RERANKER_HF_API_MAX_DOCUMENTS", "32"))
+HF_API_MAX_LENGTH = int(os.getenv("RERANKER_HF_API_MAX_LENGTH", "1024"))
 
 RerankTransport = Callable[[str, dict[str, str], dict[str, Any], float], dict[str, Any]]
 
@@ -150,39 +153,57 @@ async def rerank_with_api(
         return _fallback(items, eff_top_k, "missing_api_key")
 
     eff_model = model or DEFAULT_MODEL
-    payload = {
-        "model": eff_model,
-        "query": query,
-        "documents": [_document_text(item) for item in items],
-    }
-    if not hf_api:
-        payload.update({
+    documents = [_document_text(item) for item in items]
+    headers = {"Content-Type": "application/json"}
+    if eff_key:
+        headers["Authorization"] = f"Bearer {eff_key}"
+    if hf_api:
+        # hf-api rejects (HTTP 422) more than 32 documents per request and inputs over max_length
+        # tokens unless truncate=true, and returns only top_n (default 5) scores. Cross-encoder
+        # scores are per (query, doc) pair, so batches can be merged and ranked together.
+        batch_size = max(1, HF_API_MAX_DOCUMENTS)
+        payloads = []
+        for start in range(0, len(documents), batch_size):
+            batch = documents[start:start + batch_size]
+            payloads.append({"model": eff_model, "query": query, "documents": batch, "top_n": len(batch),
+                             "truncate": True, "max_length": HF_API_MAX_LENGTH, "batch_size": 8})
+    else:
+        batch_size = len(documents)
+        payloads = [{
+            "model": eff_model,
+            "query": query,
+            "documents": documents,
             "return_documents": False,
             "top_n": len(items),
             "max_chunks_per_doc": 1024,
             "overlap_tokens": 80,
-        })
-    headers = {"Content-Type": "application/json"}
-    if eff_key:
-        headers["Authorization"] = f"Bearer {eff_key}"
+        }]
     call = transport or _post_json
     start = time.perf_counter()
+    results: list[dict[str, Any]] = []
     try:
-        response = await asyncio.to_thread(
-            call,
-            _endpoint(base_url or DEFAULT_BASE_URL),
-            headers,
-            payload,
-            float(timeout_seconds or DEFAULT_TIMEOUT_SECONDS),
-        )
+        for batch_index, payload in enumerate(payloads):
+            response = await asyncio.to_thread(
+                call,
+                _endpoint(base_url or DEFAULT_BASE_URL),
+                headers,
+                payload,
+                float(timeout_seconds or DEFAULT_TIMEOUT_SECONDS),
+            )
+            offset = batch_index * batch_size
+            for result in response.get("results") or []:
+                try:
+                    results.append({**result, "index": int(result.get("index")) + offset})
+                except (TypeError, ValueError):
+                    continue
     except Exception as exc:  # noqa: BLE001 - eval experiment must preserve fallback behavior.
         return _fallback(items, eff_top_k, str(exc))
 
     elapsed_ms = (time.perf_counter() - start) * 1000
     try:
-        return _rank_from_response(
+        ranked, meta = _rank_from_response(
             items,
-            response,
+            {"results": results, "meta": response.get("meta") or {}},
             top_k=eff_top_k,
             model=eff_model,
             elapsed_ms=elapsed_ms,
@@ -190,6 +211,8 @@ async def rerank_with_api(
         )
     except Exception as exc:  # noqa: BLE001 - malformed provider response should not abort eval.
         return _fallback(items, eff_top_k, f"invalid_api_response: {exc}")
+    meta["api_calls"] = len(payloads)
+    return ranked, meta
 
 
 __all__ = ["rerank_with_api"]

@@ -97,11 +97,33 @@ class HfApiRerankerTests(unittest.TestCase):
             ))
 
         self.assertEqual(captured["url"], "http://hf-api:8000/rerank")
-        self.assertEqual(set(captured["payload"]), {"model", "query", "documents"})
+        payload = captured["payload"]
+        self.assertNotIn("return_documents", payload)  # hf-api forbids extra fields (422)
+        self.assertTrue(payload["truncate"])
+        self.assertEqual(payload["top_n"], 2)  # hf-api defaults to top 5 scores only
         self.assertNotIn("Authorization", captured["headers"])
         self.assertEqual([item["id"] for item in ranked], ["b", "a"])
         self.assertEqual(ranked[0]["rerank_score"], 0.97)
         self.assertEqual(meta["reranker_used"], "hf_api")
+
+    def test_hf_api_splits_more_than_32_documents_and_merges_scores(self):
+        calls = []
+
+        def fake_transport(url, headers, payload, timeout):
+            calls.append(len(payload["documents"]))
+            # score = position inside the batch, so the global winner sits in the second batch
+            return {"results": [{"index": i, "score": i / 100} for i in range(len(payload["documents"]))]}
+
+        items = [{"id": str(i), "title": f"t{i}", "summary": "s"} for i in range(50)]
+        ranked, meta = asyncio.run(api_reranker.rerank_with_api(
+            "q", items, top_k=3, base_url="http://hf-api:8000", transport=fake_transport, api_format="hf_api",
+        ))
+
+        self.assertEqual(calls, [32, 18])
+        self.assertEqual(meta["api_calls"], 2)
+        self.assertEqual(meta["ranked_count"], 50)
+        self.assertEqual(ranked[0]["id"], "31")  # index 31 in batch 1 scores 0.31, the highest overall
+        self.assertEqual(ranked[1]["id"], "30")
 
 
 if __name__ == "__main__":

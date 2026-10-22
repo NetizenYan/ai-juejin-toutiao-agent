@@ -9,11 +9,14 @@
 from __future__ import annotations
 
 import asyncio
+import logging
 import os
 import re
 from typing import Any
 
 from harness.reranker_api import rerank_with_api
+
+logger = logging.getLogger(__name__)
 
 # 模型已预下载到本地 HF 缓存 → 运行时离线加载（快、稳、不依赖网络/镜像）。
 # 首次下载请用官方源：HF_ENDPOINT=https://huggingface.co python -m scripts.warmup_reranker
@@ -68,6 +71,9 @@ async def rerank(query: str, items: list[dict], top_k: int = 5) -> list[dict]:
             ),
             api_format="hf_api" if hf_api else "siliconflow",
         )
+        if not _meta.get("used"):
+            # Falling back to recall order silently hid an hf-api 422 for every real query.
+            logger.warning("rerank api fallback to recall order: %s", _meta.get("reason"))
         return ranked
     try:
         return await asyncio.to_thread(_sync_rerank, query, items, top_k)
