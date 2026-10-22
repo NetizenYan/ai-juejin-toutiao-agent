@@ -1,0 +1,415 @@
+{
+  "news:jjrb:02621e1641aa80cd": {
+    "status": "mapped",
+    "new_ids": [
+      "news:jjrb:82a5dc44a3242a2f"
+    ],
+    "title": "深化全球金融治理合作",
+    "publish_dates": [
+      "2026-05-27"
+    ]
+  },
+  "news:jjrb:06a9d97492dd5d69": {
+    "status": "mapped",
+    "new_ids": [
+      "news:jjrb:a3c0001888d8ab30"
+    ],
+    "title": "保险守护果农“甜蜜事业”",
+    "publish_dates": [
+      "2026-06-08"
+    ]
+  },
+  "news:jjrb:139aa3760c02aada": {
+    "status": "mapped",
+    "new_ids": [
+      "news:jjrb:4c88a7c38c557e7a"
+    ],
+    "title": "织密新就业群体保障网",
+    "publish_dates": [
+      "2026-06-07"
+    ]
+  },
+  "news:jjrb:205b4591176db0d2": {
+    "status": "mapped",
+    "new_ids": [
+      "news:jjrb:2202ceb58f8854eb"
+    ],
+    "title": "新质生产力赋能高质量发展的实现路径",
+    "publish_dates": [
+      "2025-08-14"
+    ]
+  },
+  "news:jjrb:234d66fbdeb07f7c": {
+    "status": "mapped",
+    "new_ids": [
+      "news:jjrb:3ad3444aff5afdd9"
+    ],
+    "title": "银行这样读懂硬科技",
+    "publish_dates": [
+      "2026-05-21"
+    ]
+  },
+  "news:jjrb:2f10cd7d951a34dc": {
+    "status": "mapped",
+    "new_ids": [
+      "news:jjrb:1cf324e77e5c95c2"
+    ],
+    "title": "在发展新质生产力上走在前列",
+    "publish_dates": [
+      "2026-05-26"
+    ]
+  },
+  "news:jjrb:30b7c40ab69e4206": {
+    "status": "unmapped",
+    "reason": "questions name several different titles",
+    "candidate_titles": [
+      "以新质生产力塑造竞争新优势",
+      "新质生产力赋能高质量发展的实现路径",
+      "点燃高质量发展新引擎"
+    ]
+  },
+  "news:jjrb:39e34b89e8ddc3a8": {
+    "status": "mapped",
+    "new_ids": [
+      "news:jjrb:8a58d10f6649d510"
+    ],
+    "title": "挖掘发展型消费新增长点",
+    "publish_dates": [
+      "2026-05-13"
+    ]
+  },
+  "news:jjrb:3e1c3f13ab725cd2": {
+    "status": "unmapped",
+    "reason": "no question names a title",
+    "candidate_titles": []
+  },
+  "news:jjrb:3f57771ab0bc4e86": {
+    "status": "unmapped",
+    "reason": "no question names a title",
+    "candidate_titles": []
+  },
+  "news:jjrb:499bb35731c974ed": {
+    "status": "mapped",
+    "new_ids": [
+      "news:jjrb:1e4cc82ea56c6a88"
+    ],
+    "title": "地方财政运行平稳韧性凸显",
+    "publish_dates": [
+      "2026-06-05"
+    ]
+  },
+  "news:jjrb:4b84f119e9730dd5": {
+    "status": "unmapped",
+    "reason": "no question names a title",
+    "candidate_titles": []
+  },
+  "news:jjrb:543874085db2b6c0": {
+    "status": "mapped",
+    "new_ids": [
+      "news:jjrb:1eb842c708e5cde9"
+    ],
+    "title": "算力网夯实智能经济根基",
+    "publish_dates": [
+      "2026-05-20"
+    ]
+  },
+  "news:jjrb:58ec18577ee8a727": {
+    "status": "unmapped",
+    "reason": "no question names a title",
+    "candidate_titles": []
+  },
+  "news:jjrb:594f564a200fdf52": {
+    "status": "mapped",
+    "new_ids": [
+      "news:jjrb:cd01adf85748c1ba"
+    ],
+    "title": "保险业深耕绿色金融新赛道",
+    "publish_dates": [
+      "2026-05-08"
+    ]
+  },
+  "news:jjrb:5da5585b574e988a": {
+    "status": "unmapped",
+    "reason": "no question names a title",
+    "candidate_titles": []
+  },
+  "news:jjrb:60b64c71b180ed44": {
+    "status": "mapped",
+    "new_ids": [
+      "news:jjrb:f2817af615e6c288"
+    ],
+    "title": "生物制造产业潜力无限",
+    "publish_dates": [
+      "2026-06-02"
+    ]
+  },
+  "news:jjrb:6cdc8a054cc5108c": {
+    "status": "unmapped",
+    "reason": "no question names a title",
+    "candidate_titles": []
+  },
+  "news:jjrb:6d66065c77e357c6": {
+    "status": "mapped",
+    "new_ids": [
+      "news:jjrb:630e2f74983e9aec"
+    ],
+    "title": "棉花产业聚势而强",
+    "publish_dates": [
+      "2026-06-10"
+    ]
+  },
+  "news:jjrb:75973a2287e89c0c": {
+    "status": "unmapped",
+    "reason": "no question names a title",
+    "candidate_titles": []
+  },
+  "news:jjrb:7886fb0ff8a66bd3": {
+    "status": "mapped",
+    "new_ids": [
+      "news:jjrb:2be0f714972fa0a5"
+    ],
+    "title": "多元金融工具“贷”动节能降碳",
+    "publish_dates": [
+      "2026-05-18"
+    ]
+  },
+  "news:jjrb:7b3ec728ed0ca595": {
+    "status": "unmapped",
+    "reason": "no question names a title",
+    "candidate_titles": []
+  },
+  "news:jjrb:821d33acb1cdfaf4": {
+    "status": "mapped",
+    "new_ids": [
+      "news:jjrb:abdf681177a30adf"
+    ],
+    "title": "深耕体验经济释放消费潜力",
+    "publish_dates": [
+      "2026-05-27"
+    ]
+  },
+  "news:jjrb:8a9e11e6e77bd4b3": {
+    "status": "mapped",
+    "new_ids": [
+      "news:jjrb:2d38a529646c1eb9"
+    ],
+    "title": "高质量发展“硬道理”的理论贡献与实践价值",
+    "publish_dates": [
+      "2026-05-14"
+    ]
+  },
+  "news:jjrb:8dcc9e6349959132": {
+    "status": "mapped",
+    "new_ids": [
+      "news:jjrb:813a2f09f2e94ba0"
+    ],
+    "title": "进一步深化对新质生产力的认识",
+    "publish_dates": [
+      "2026-05-15"
+    ]
+  },
+  "news:jjrb:90a8d7b82d15a294": {
+    "status": "unmapped",
+    "reason": "no question names a title",
+    "candidate_titles": []
+  },
+  "news:jjrb:97ec7f1babb17e25": {
+    "status": "unmapped",
+    "reason": "no question names a title",
+    "candidate_titles": []
+  },
+  "news:jjrb:99534f0b518888e0": {
+    "status": "mapped",
+    "new_ids": [
+      "news:jjrb:110f4b5591ac05ed"
+    ],
+    "title": "赛道细分，童装产业锻造品牌力",
+    "publish_dates": [
+      "2026-06-01"
+    ]
+  },
+  "news:jjrb:9dcf89fa1f77c858": {
+    "status": "mapped",
+    "new_ids": [
+      "news:jjrb:acc9d3b132cb12e7",
+      "news:jjrb:0b2d3c8afed6ab82"
+    ],
+    "title": "财政金融协同促内需",
+    "publish_dates": [
+      "2026-01-30",
+      "2026-05-06"
+    ]
+  },
+  "news:jjrb:9f63c34bc6ee36fe": {
+    "status": "mapped",
+    "new_ids": [
+      "news:jjrb:af4c45237aba9391"
+    ],
+    "title": "普惠金融靶向发力助小微",
+    "publish_dates": [
+      "2026-06-03"
+    ]
+  },
+  "news:jjrb:a9d8dd5ff9ec1f03": {
+    "status": "unmapped",
+    "reason": "no question names a title",
+    "candidate_titles": []
+  },
+  "news:jjrb:ab80d6cfa4916e36": {
+    "status": "unmapped",
+    "reason": "no question names a title",
+    "candidate_titles": []
+  },
+  "news:jjrb:ac7e8fcf5dfa6a03": {
+    "status": "mapped",
+    "new_ids": [
+      "news:jjrb:41885209c9b488a1"
+    ],
+    "title": "制造业“六化”转型再提速",
+    "publish_dates": [
+      "2026-06-02"
+    ]
+  },
+  "news:jjrb:acd9f80643a999ca": {
+    "status": "mapped",
+    "new_ids": [
+      "news:jjrb:d8bbd3fe2a8ca796",
+      "news:jjrb:4a78ffbc50eea254"
+    ],
+    "title": "前瞻布局和发展未来产业",
+    "publish_dates": [
+      "2026-04-26",
+      "2026-06-01"
+    ]
+  },
+  "news:jjrb:af17afe835290422": {
+    "status": "mapped",
+    "new_ids": [
+      "news:jjrb:a05b161bfd8ab061"
+    ],
+    "title": "科技保险为创新减震",
+    "publish_dates": [
+      "2026-05-25"
+    ]
+  },
+  "news:jjrb:b776e0afeb9a1622": {
+    "status": "unmapped",
+    "reason": "no question names a title",
+    "candidate_titles": []
+  },
+  "news:jjrb:bb3cb6cde47dd216": {
+    "status": "unmapped",
+    "reason": "no question names a title",
+    "candidate_titles": []
+  },
+  "news:jjrb:bf01fab25ecd6e0f": {
+    "status": "mapped",
+    "new_ids": [
+      "news:jjrb:3c26adba0959eb54"
+    ],
+    "title": "精耕细作，童书消费步入品质时代",
+    "publish_dates": [
+      "2026-06-05"
+    ]
+  },
+  "news:jjrb:c1ec8dba59f743ab": {
+    "status": "mapped",
+    "new_ids": [
+      "news:jjrb:bf412afc5b25180e"
+    ],
+    "title": "推进内外贸一体化用好两个市场",
+    "publish_dates": [
+      "2026-06-05"
+    ]
+  },
+  "news:jjrb:c2d005db3531eb74": {
+    "status": "mapped",
+    "new_ids": [
+      "news:jjrb:cde3d0b2e2493d14"
+    ],
+    "title": "财务公司全周期服务绿色产业",
+    "publish_dates": [
+      "2026-05-12"
+    ]
+  },
+  "news:jjrb:d1ff128e2ba01cd3": {
+    "status": "mapped",
+    "new_ids": [
+      "news:jjrb:31d57bfdea5d1f5a"
+    ],
+    "title": "金融支持“三农”提质增效",
+    "publish_dates": [
+      "2026-06-04"
+    ]
+  },
+  "news:jjrb:e765c3e49ad26cd4": {
+    "status": "unmapped",
+    "reason": "no question names a title",
+    "candidate_titles": []
+  },
+  "news:jjrb:eb6c8f4c7381fab2": {
+    "status": "mapped",
+    "new_ids": [
+      "news:jjrb:20e369dd0521d75e"
+    ],
+    "title": "把握宏观经济形势推动高质量发展",
+    "publish_dates": [
+      "2026-05-21"
+    ]
+  },
+  "news:jjrb:eb8730afc02b5a1b": {
+    "status": "unmapped",
+    "reason": "no question names a title",
+    "candidate_titles": []
+  },
+  "news:jjrb:fc9f929eb1519ca0": {
+    "status": "unmapped",
+    "reason": "no question names a title",
+    "candidate_titles": []
+  },
+  "news:rmrb:1237f514ab13003e": {
+    "status": "unmapped",
+    "reason": "no question names a title",
+    "candidate_titles": []
+  },
+  "news:rmrb:368a94d82b73a2cd": {
+    "status": "unmapped",
+    "reason": "no question names a title",
+    "candidate_titles": []
+  },
+  "news:rmrb:4e44ad5654edd0f0": {
+    "status": "unmapped",
+    "reason": "no question names a title",
+    "candidate_titles": []
+  },
+  "news:rmrb:608fe934f5065124": {
+    "status": "unmapped",
+    "reason": "no question names a title",
+    "candidate_titles": []
+  },
+  "news:rmrb:65278af6c12e061d": {
+    "status": "unmapped",
+    "reason": "no question names a title",
+    "candidate_titles": []
+  },
+  "news:rmrb:72e9734af882cb47": {
+    "status": "unmapped",
+    "reason": "no question names a title",
+    "candidate_titles": []
+  },
+  "news:rmrb:885ff30990900162": {
+    "status": "unmapped",
+    "reason": "no question names a title",
+    "candidate_titles": []
+  },
+  "news:rmrb:eef780c20a1a362f": {
+    "status": "unmapped",
+    "reason": "no question names a title",
+    "candidate_titles": []
+  },
+  "news:rmrb:f75b8053dcbc646b": {
+    "status": "unmapped",
+    "reason": "no question names a title",
+    "candidate_titles": []
+  }
+}
