@@ -12,7 +12,14 @@ from harness.anchor_resolver import (
 class AnchorResolverTests(unittest.TestCase):
     def test_detects_fuzzy_news_memory_query(self):
         self.assertTrue(looks_like_anchor_query("我记得2024年5月经济日报发过一篇关于新质生产力的新闻"))
+        self.assertTrue(looks_like_anchor_query("2026年5月经济日报是不是有一篇讲新质生产力的？是哪一篇？"))
         self.assertFalse(looks_like_anchor_query("你好，介绍一下你自己"))
+
+    def test_named_title_and_source_list_queries_are_not_anchor_queries(self):
+        # These must be answered directly; the confirmation flow never answers.
+        self.assertFalse(looks_like_anchor_query("发展新质生产力上走在前列这篇报道讲了什么？"))
+        self.assertFalse(looks_like_anchor_query("经济日报关于新质生产力的报道有哪些？"))
+        self.assertFalse(looks_like_anchor_query("人民日报有没有关于人工智能长期主义的经济报道？"))
 
     def test_station_internal_medium_or_high_candidates_require_confirmation(self):
         items = [

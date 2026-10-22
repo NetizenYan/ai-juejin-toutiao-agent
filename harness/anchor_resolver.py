@@ -10,15 +10,18 @@ from dataclasses import dataclass, field
 from typing import Any
 
 
+# Only fuzzy-recall phrasing ("我记得…发过一篇…是哪一篇") starts the confirmation flow, which never
+# answers directly. "这篇报道"/"这条新闻" usually follow a title the user just named or refer to the
+# previous turn, and "经济日报关于…的报道有哪些" is a list request; treating those as anchor queries
+# intercepted 44/115 end-to-end eval cases whose evidence was already ranked first.
 ANCHOR_QUERY_MARKERS = (
     "我记得",
     "好像",
     "是不是有一篇",
     "发过一篇",
     "发布了一篇",
-    "这篇报道",
-    "那篇报道",
-    "这条新闻",
+    "是哪一篇",
+    "哪一篇来着",
 )
 SOURCE_TERMS = (
     "经济日报",
@@ -105,12 +108,7 @@ class AnchorResolution:
 
 def looks_like_anchor_query(query: str) -> bool:
     text = query or ""
-    if any(marker in text for marker in ANCHOR_QUERY_MARKERS):
-        return True
-    return bool(
-        ("新闻" in text or "报道" in text or "文章" in text)
-        and any(source in text for source in SOURCE_TERMS)
-    )
+    return any(marker in text for marker in ANCHOR_QUERY_MARKERS)
 
 
 def _extract_query_terms(query: str, terms: tuple[str, ...]) -> list[str]:
