@@ -17,7 +17,7 @@ from sqlalchemy import select
 
 from config.ai_conf import settings, get_embedding_client
 from config.db_conf import AsyncSessionLocal, async_engine
-from config.vector_conf import get_qdrant, CHUNK_COLLECTION, save_meta
+from config.vector_conf import get_qdrant, CHUNK_COLLECTION, ensure_payload_indexes, save_meta
 from models.news import News
 from harness.chunking import chunk_text
 
@@ -38,6 +38,7 @@ async def main(recreate: bool):
         await qdrant.delete_collection(CHUNK_COLLECTION)
     if not await qdrant.collection_exists(CHUNK_COLLECTION):
         await qdrant.create_collection(CHUNK_COLLECTION, vectors_config=VectorParams(size=dim, distance=Distance.COSINE))
+    await ensure_payload_indexes(qdrant, CHUNK_COLLECTION)  # before inserting, so HNSW uses them
 
     async with AsyncSessionLocal() as db:
         rows = (await db.execute(select(News.id, News.title, News.content, News.description,

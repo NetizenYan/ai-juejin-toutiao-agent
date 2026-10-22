@@ -10,7 +10,7 @@ import json
 import os
 
 from qdrant_client import AsyncQdrantClient
-from qdrant_client.models import Distance, VectorParams
+from qdrant_client.models import Distance, PayloadSchemaType, VectorParams
 
 from config.env_loader import load_project_env
 
@@ -53,6 +53,27 @@ def assert_meta_matches(model: str, dim: int) -> None:
         )
 
 
+# Payload fields used in Qdrant filters (chunk_type in every RAG search, source for source-limited
+# queries, evidence_id for carry-over / evidence detail lookups). Without a payload index, filtered
+# HNSW search silently misses results: a gold article ranked 1st by exact search was absent from
+# the filtered top-50. The index must exist BEFORE the HNSW graph is built to be used by it.
+FILTER_PAYLOAD_FIELDS = ("chunk_type", "source", "evidence_id")
+
+
+async def ensure_payload_indexes(client: AsyncQdrantClient, collection: str,
+                                 fields: tuple[str, ...] = FILTER_PAYLOAD_FIELDS) -> list[str]:
+    """Create missing keyword payload indexes; returns the fields that were created."""
+    info = await client.get_collection(collection)
+    existing = set((info.payload_schema or {}).keys())
+    created = []
+    for field in fields:
+        if field not in existing:
+            await client.create_payload_index(collection, field_name=field,
+                                              field_schema=PayloadSchemaType.KEYWORD, wait=True)
+            created.append(field)
+    return created
+
+
 async def ensure_collection(client: AsyncQdrantClient, dim: int, recreate: bool = False) -> None:
     exists = await client.collection_exists(COLLECTION)
     if exists and recreate:
@@ -63,3 +84,4 @@ async def ensure_collection(client: AsyncQdrantClient, dim: int, recreate: bool 
             collection_name=COLLECTION,
             vectors_config=VectorParams(size=dim, distance=Distance.COSINE),
         )
+        await ensure_payload_indexes(client, COLLECTION)

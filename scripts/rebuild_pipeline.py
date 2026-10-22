@@ -25,7 +25,7 @@ if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
 from config.ai_conf import settings  # noqa: E402
-from config.vector_conf import get_qdrant  # noqa: E402
+from config.vector_conf import ensure_payload_indexes, get_qdrant  # noqa: E402
 from scripts.econ_candidate_chunk_index import (  # noqa: E402
     DEFAULT_DATASET,
     base_payload,
@@ -288,6 +288,7 @@ async def ensure_qdrant_collection(client: Any, *, collection: str, vector_dim: 
             collection_name=collection,
             vectors_config=VectorParams(size=vector_dim, distance=Distance.COSINE),
         )
+    await ensure_payload_indexes(client, collection)  # before upserts, so the HNSW graph uses them
 
 
 async def truncate_v2_pg(conn: asyncpg.Connection) -> None:
