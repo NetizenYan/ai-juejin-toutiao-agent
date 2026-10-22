@@ -532,7 +532,7 @@ class RagTimeAwareRankingTests(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(fake.collections)
         self.assertTrue(all(name == rag_search.CHUNK_COLLECTION for name in fake.collections))
 
-    async def test_non_econ_query_keeps_default_collection_when_enabled(self):
+    async def test_non_econ_query_searches_default_and_econ_collections_when_enabled(self):
         fake = _FakeQdrant([
             _point(0.72, {
                 "news_id": 31,
@@ -569,9 +569,42 @@ class RagTimeAwareRankingTests(unittest.IsolatedAsyncioTestCase):
         finally:
             rag_search.settings = original_settings
 
+        # The default collection only holds 新闻联播; newspapers live in the econ collection, so a
+        # default-route query without a named source searches both and merges by score.
         self.assertEqual(result["collection_route"], "default")
-        self.assertTrue(fake.collections)
-        self.assertTrue(all(name == rag_search.CHUNK_COLLECTION for name in fake.collections))
+        self.assertEqual(set(fake.collections), {rag_search.CHUNK_COLLECTION, "toutiao_exp_econ_recent_20260621"})
+        self.assertEqual(len({item["evidence_id"] for item in result["items"]}), len(result["items"]))
+
+    def _routing_settings(self):
+        return SimpleNamespace(
+            embedding_model="fake-embedding", rag_recall_limit=10, rag_ranking="hybrid", rag_chunk_type_filter=None,
+            rag_expand_body_evidence=False, rag_body_chunks_per_parent=1, rag_body_fallback_slots=0,
+            rag_query_router_enabled=True, rag_econ_collection_enabled=True,
+            rag_econ_collection_name="econ_collection", app_env="development",
+        )
+
+    async def _search_with(self, query, fake):
+        original_settings = rag_search.settings
+        rag_search.settings = self._routing_settings()
+        try:
+            return await search_news_rag(query, limit=3, embedding_client_factory=lambda: _FakeEmbeddingClient(),
+                                         qdrant_factory=lambda: fake, assert_meta_matches_fn=lambda _m, _d: None,
+                                         now_ts=_NOW_TS)
+        finally:
+            rag_search.settings = original_settings
+
+    async def test_newspaper_source_query_uses_econ_collection_only(self):
+        fake = _FakeQdrant([_point(0.7, {"news_id": "rmrb:1", "title": "中欧班列，回程装了啥", "chunk_text": "回程班列。",
+                                         "publish_time": "2025-07-16 00:00:00", "source": "rmrb"})])
+        result = await self._search_with("人民日报关于中欧班列回程的报道", fake)
+        self.assertEqual(set(fake.collections), {"econ_collection"})
+        self.assertEqual(result["collection_route"], "econ_finance_query")
+
+    async def test_broadcast_source_query_stays_on_default_collection(self):
+        fake = _FakeQdrant([_point(0.7, {"news_id": 1, "title": "新闻联播 2024-07-18｜公报", "chunk_text": "公报。",
+                                         "publish_time": "2024-07-18 19:00:00", "source": "新闻联播"})])
+        await self._search_with("新闻联播关于三中全会公报的报道", fake)
+        self.assertEqual(set(fake.collections), {rag_search.CHUNK_COLLECTION})
 
 
 if __name__ == "__main__":

@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import re
 
+from harness.rag_query_router import ECON_FINANCE_TRIGGERS
+
 URL_RE = re.compile(r"https?://[^\s，。！？）)]+", re.IGNORECASE)
 WEB_KEYWORDS = ("联网", "网页", "网上", "原文", "url", "链接", "http://", "https://")
 NEWS_KEYWORDS = (
@@ -35,6 +37,37 @@ NEWS_KEYWORDS = (
     "央视",
     "新华社",
 )
+# Public-affairs vocabulary: questions about policy, projects, infrastructure or livelihoods are news
+# questions even without the words 新闻/报道. Classifying them as general_chat skips retrieval and lets
+# the model answer ungrounded (e.g. "我国首个海上二氧化碳封存示范项目有什么新进展？").
+PUBLIC_AFFAIRS_KEYWORDS = (
+    "政策",
+    "进展",
+    "项目",
+    "工程",
+    "示范",
+    "试点",
+    "规划",
+    "改革",
+    "国务院",
+    "发改委",
+    "发布会",
+    "能源",
+    "电力",
+    "交通",
+    "基建",
+    "运河",
+    "港口",
+    "铁路",
+    "航运",
+    "民生",
+    "就业",
+    "养老",
+    "医保",
+    "社保",
+)
+# Reuse the econ vocabulary the RAG router already routes on, so intent and collection routing agree.
+NEWS_TOPIC_KEYWORDS = tuple(dict.fromkeys(PUBLIC_AFFAIRS_KEYWORDS + tuple(t.lower() for t in ECON_FINANCE_TRIGGERS)))
 RECOMMEND_KEYWORDS = ("推荐", "看看", "相关文章", "相似")
 INVESTMENT_BOUNDARY_KEYWORDS = (
     "股票",
@@ -99,7 +132,7 @@ def detect_intent(message: str) -> str:
         return "news_lookup"
     if _has_any_keyword(normalized, RECOMMEND_KEYWORDS):
         return "recommendation"
-    if _has_any_keyword(normalized, NEWS_KEYWORDS):
+    if _has_any_keyword(normalized, NEWS_KEYWORDS) or _has_any_keyword(normalized, NEWS_TOPIC_KEYWORDS):
         return "news_qa"
     return "general_chat"
 

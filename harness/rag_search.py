@@ -245,16 +245,58 @@ def _filter_stale_recent_items(
     return filtered, len(items) - len(filtered)
 
 
+# Newspapers whose articles live only in the econ/policy collection (scripts/build_econ_corpus.py);
+# the default chunk collection holds 新闻联播 transcripts only.
+_ECON_COLLECTION_SOURCES = {"jjrb", "经济日报", "rmrb", "人民日报"}
+_BROADCAST_SOURCES = {"新闻联播", "央视", "央视新闻"}
+
+
+def _econ_collection_enabled() -> bool:
+    return bool(settings.rag_econ_collection_enabled and settings.rag_econ_collection_name)
+
+
 def _select_collection(query: str) -> tuple[str, str]:
+    """Primary collection and route label for a query."""
     test_env = settings.app_env in {"test", "testing"}
     econ_query = is_econ_finance_query(query)
     source_values = _matched_source_values(query)
-    if any(value in {"新闻联播", "央视", "央视新闻"} for value in source_values):
+    if any(value in _BROADCAST_SOURCES for value in source_values):
         return CHUNK_COLLECTION, "default"
-    if settings.rag_econ_collection_enabled and settings.rag_econ_collection_name and (econ_query or test_env):
+    if _econ_collection_enabled() and (econ_query or test_env or any(v in _ECON_COLLECTION_SOURCES for v in source_values)):
         reason = "test_env" if test_env and not econ_query else "econ_finance_query"
         return settings.rag_econ_collection_name, reason
     return CHUNK_COLLECTION, "default"
+
+
+def _search_collections(query: str, primary: str) -> list[str]:
+    """Collections actually searched. A default-route query that names no source searches both corpora:
+    without this, questions such as "平陆运河怎样激活北部湾？" only saw 新闻联播 and missed the newspapers."""
+    if primary != CHUNK_COLLECTION or not _econ_collection_enabled():
+        return [primary]
+    if any(value in _BROADCAST_SOURCES for value in _matched_source_values(query)):
+        return [primary]
+    return [primary, settings.rag_econ_collection_name]
+
+
+async def _query_collections(
+    qdrant: Any,
+    vector: list[float],
+    limit: int,
+    chunk_type_filter: str | None,
+    collections: list[str],
+    source_values: list[str] | None = None,
+) -> tuple[list[Any], bool]:
+    """Query each collection and merge by score (all collections share one embedding model)."""
+    if len(collections) == 1:
+        return await _query_points(qdrant, vector, limit, chunk_type_filter, collections[0], source_values)
+    merged: list[Any] = []
+    fallback_used = False
+    for collection in collections:
+        points, fallback = await _query_points(qdrant, vector, limit, chunk_type_filter, collection, source_values)
+        merged.extend(points)
+        fallback_used = fallback_used or fallback
+    merged.sort(key=lambda point: float(getattr(point, "score", 0.0) or 0.0), reverse=True)
+    return merged[:limit], fallback_used
 
 
 def _apply_source_preference(query: str, items: list[dict]) -> list[dict]:
@@ -392,12 +434,13 @@ async def search_news_rag(
         default_body_fallback_slots=configured_body_slots,
     )
     collection_name, collection_reason = _select_collection(query)
+    collections = _search_collections(query, collection_name)
     effective_body_slots = max(0, int(route.body_fallback_slots or 0))
     source_values = _source_filter_values(query) if route.query_type == "source_constrained" else []
     qdrant = qdrant_factory()
 
-    summary_points, filter_fallback_used = await _query_points(
-        qdrant, vector, candidate_limit, effective_chunk_type_filter, collection_name, source_values
+    summary_points, filter_fallback_used = await _query_collections(
+        qdrant, vector, candidate_limit, effective_chunk_type_filter, collections, source_values
     )
     summary_items = _points_to_items(summary_points)
     summary_items, time_aware_ranking = _rerank_items(query, summary_items, effective_ranking, route, now_ts)
@@ -411,8 +454,8 @@ async def search_news_rag(
     body_low_quality_filtered = 0
     body_stale_filtered = 0
     if effective_body_slots:
-        body_points, _body_filter_fallback = await _query_points(
-            qdrant, vector, candidate_limit, "body", collection_name, source_values
+        body_points, _body_filter_fallback = await _query_collections(
+            qdrant, vector, candidate_limit, "body", collections, source_values
         )
         body_items = _points_to_items(body_points)
         body_items, _body_time_aware = _rerank_items(query, body_items, effective_ranking, route, now_ts)
@@ -436,7 +479,7 @@ async def search_news_rag(
         "time_aware_ranking": time_aware_ranking,
         "low_quality_filtered": summary_low_quality_filtered + body_low_quality_filtered,
         "stale_time_filtered": stale_filtered + body_stale_filtered,
-        "collection_name": collection_name,
+        "collection_name": "+".join(collections),
         "collection_route": collection_reason,
     }
     result["evidence_ids"] = [
