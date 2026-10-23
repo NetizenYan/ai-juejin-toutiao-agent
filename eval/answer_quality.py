@@ -84,13 +84,16 @@ async def load_mysql_news(ids: set[int]) -> dict[str, dict[str, str]]:
         return {}
     from sqlalchemy import bindparam, text
 
-    from config.db_conf import AsyncSessionLocal
+    from config.db_conf import AsyncSessionLocal, async_engine
 
     stmt = text("SELECT id, title, content, publish_time FROM news WHERE id IN :ids").bindparams(
         bindparam("ids", expanding=True)
     )
-    async with AsyncSessionLocal() as session:
-        rows = (await session.execute(stmt, {"ids": sorted(ids)})).all()
+    try:
+        async with AsyncSessionLocal() as session:
+            rows = (await session.execute(stmt, {"ids": sorted(ids)})).all()
+    finally:
+        await async_engine.dispose()
     return {
         f"news:{row.id}": {
             "title": row.title or "",
