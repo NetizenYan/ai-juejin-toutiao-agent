@@ -1,0 +1,45 @@
+{
+ "decided_by": "claude-opus-5-5 (user delegated, 2026-10-23)",
+ "rule": "relevant only if the article's main subject answers the question (same criteria as annotations_claude_20261022)",
+ "removals": {
+  "context_follow_009_reviewed": [
+   "news:jjrb:0815c6494ad57ddb"
+  ],
+  "context_replacement_020_reviewed": [
+   "news:jjrb:8b3eece0160065ae",
+   "news:jjrb:5ebe4e89321586ca",
+   "news:rmrb:67a32be15d161703"
+  ],
+  "context_replacement_018_reviewed": [
+   "news:rmrb:fcdf1116bf6578c0"
+  ],
+  "context_follow_008_reviewed": [
+   "news:jjrb:001426422d9d6009",
+   "news:jjrb:b7143b7e855bfc0d",
+   "news:jjrb:186b8c0df52885dc",
+   "news:jjrb:f9252a7aaef36c24"
+  ],
+  "context_follow_013_reviewed": [
+   "news:rmrb:896239273d16ce01",
+   "news:rmrb:5ae956a70b8f51b9",
+   "news:jjrb:3990445b5482566c",
+   "news:jjrb:53a799c4f949ec03",
+   "news:jjrb:5b9e726f1dc95c5f",
+   "news:jjrb:c031cdab3b245e2d"
+  ],
+  "multi_doc_012_reviewed": [
+   "news:rmrb:24404e002ee13f30"
+  ],
+  "multi_doc_009_reviewed": [
+   "news:jjrb:e94f638d880ed583",
+   "news:jjrb:8321ced44eaab425",
+   "news:jjrb:abadbf61178ca05a"
+  ]
+ },
+ "kept_because_human_labeled": [
+  [
+   "multi_doc_007",
+   "news:jjrb:1cf324e77e5c95c2"
+  ]
+ ]
+}
