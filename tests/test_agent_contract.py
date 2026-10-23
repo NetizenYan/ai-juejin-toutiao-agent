@@ -91,6 +91,21 @@ class AgentContractTests(unittest.TestCase):
         self.assertEqual(results[1]["items"], [])
         self.assertTrue(results[1]["merged_into_first_retrieval"])
 
+    def test_extra_retrieval_calls_keep_the_question_date_and_source(self):
+        may = 1778630400  # 2026-05-13
+        results = [
+            {"tool": "retrieve_news", "items": [{"id": "rmrb:a", "chunk_text": "a", "source": "rmrb", "publish_ts": may}]},
+            {"tool": "retrieve_news", "items": [
+                {"id": "rmrb:b", "chunk_text": "b", "source": "rmrb", "publish_ts": may},
+                {"id": "jjrb:c", "chunk_text": "c", "source": "jjrb", "publish_ts": may},
+                {"id": "rmrb:d", "chunk_text": "d", "source": "rmrb", "publish_ts": 1754524800},  # 2025-08
+            ]},
+        ]
+
+        agent._merge_retrieval_results(results, "只看人民日报，2026年5月关于算力网建设有什么报道？")
+
+        self.assertEqual([item["id"] for item in results[0]["items"]], ["rmrb:a", "rmrb:b"])
+
     def test_fallback_routes_news_question_to_search_tool(self):
         calls = build_fallback_tool_calls("帮我找一下AI芯片相关资讯")
 

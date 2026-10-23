@@ -34,6 +34,9 @@ from harness.external_evidence import verify_external_evidence
 from harness.query_understanding import understand_user_query
 from harness.answer_contract import build_answer_contract, parse_enforce_routes, resolve_validation_mode, AnswerContract
 from harness.citation_repair import repair_citations
+from harness.date_window import explicit_date_window
+from harness.rag_search import SOURCE_VALUE_ALIASES
+from harness.rag_query_router import matched_source_terms
 from harness.answer_validator import (
     AnswerValidationResult,
     declines_to_answer,
@@ -491,17 +494,39 @@ def _anchor_retrieval_on_question(planned: list[dict], deterministic: list[dict]
     return (question_calls + extra)[: settings.max_tool_calls_per_turn]
 
 
-def _merge_retrieval_results(tool_results: list[dict]) -> None:
+def _question_constraint(question: str):
+    """Date window and source the user asked for; planner keyword queries often drop both."""
+    window = explicit_date_window(question)
+    terms = matched_source_terms(question)
+    sources = set(SOURCE_VALUE_ALIASES.get(terms[0], (terms[0],))) if len(terms) == 1 else set()
+
+    def allowed(item: dict) -> bool:
+        if window is not None:
+            ts = item.get("publish_ts")
+            if not ts or not (window.start_ts <= int(ts) < window.end_ts):
+                return False
+        if sources and str(item.get("source") or "") not in sources:
+            return False
+        return True
+
+    return allowed
+
+
+def _merge_retrieval_results(tool_results: list[dict], question: str = "") -> None:
     """Pool the chunks of every retrieve_news call into the first one, so they are reranked once
-    against the question and the evidence pack keeps RAG_TOP items instead of RAG_TOP per call."""
+    against the question and the evidence pack keeps RAG_TOP items instead of RAG_TOP per call.
+    Extra calls only add chunks that satisfy the question's own date window and source."""
     retrievals = [r for r in tool_results if r.get("tool") == "retrieve_news" and not r.get("error")]
     if len(retrievals) < 2:
         return
+    allowed = _question_constraint(question)
     first = retrievals[0]
     seen = {(item.get("evidence_id") or item.get("id"), item.get("chunk_text")) for item in first.get("items") or []}
     pooled = list(first.get("items") or [])
     for other in retrievals[1:]:
         for item in other.get("items") or []:
+            if not allowed(item):
+                continue
             key = (item.get("evidence_id") or item.get("id"), item.get("chunk_text"))
             if key not in seen:
                 seen.add(key)
@@ -1524,7 +1549,7 @@ async def run_chat(history_messages: list[dict], db: Optional[AsyncSession] = No
 
     # RAG 精排 + 父子聚合：chunk 级 cross-encoder 重排 → 聚合到 parent news_id（取最佳 chunk）
     # → 轻时间衰减 → 标题去重 → top-K 父文档
-    _merge_retrieval_results(tool_results)
+    _merge_retrieval_results(tool_results, retrieval_user)
     for result in tool_results:
         if result.get("tool") == "retrieve_news" and result.get("items"):
             rerank_query = str(result.get("_ocr_compare_query") or retrieval_user)
