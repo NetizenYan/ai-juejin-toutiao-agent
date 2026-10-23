@@ -19,7 +19,13 @@ import time
 from qdrant_client.models import HnswConfigDiff
 
 from config.ai_conf import settings
-from config.vector_conf import CHUNK_COLLECTION, COLLECTION, ensure_payload_indexes, get_qdrant
+from config.vector_conf import (
+    CHUNK_COLLECTION,
+    COLLECTION,
+    FILTER_PAYLOAD_FIELDS,
+    ensure_payload_indexes,
+    get_qdrant,
+)
 
 
 async def fix_collection(client, collection: str, *, force_rebuild: bool, timeout_s: int = 1800) -> dict:
@@ -27,7 +33,8 @@ async def fix_collection(client, collection: str, *, force_rebuild: bool, timeou
         return {"collection": collection, "skipped": "not found"}
     created = await ensure_payload_indexes(client, collection)
     rebuilt = False
-    if created or force_rebuild:
+    # Only keyword filters run through HNSW; range fields are searched exactly.
+    if any(field in FILTER_PAYLOAD_FIELDS for field in created) or force_rebuild:
         current = (await client.get_collection(collection)).config.hnsw_config.ef_construct
         await client.update_collection(collection, hnsw_config=HnswConfigDiff(ef_construct=128 if current != 128 else 129))
         rebuilt = True

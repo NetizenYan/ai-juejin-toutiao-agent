@@ -26,7 +26,8 @@ class PayloadIndexTests(unittest.TestCase):
     def test_creates_only_missing_indexes_and_waits(self):
         client = _FakeQdrant(existing={"source"})
         created = asyncio.run(ensure_payload_indexes(client, "c"))
-        self.assertEqual(created, ["chunk_type", "evidence_id"])
+        self.assertEqual(created, ["chunk_type", "evidence_id", "publish_ts"])
+        self.assertIn("integer", client.created[-1][2].lower())
         self.assertTrue(all(wait for *_rest, wait in client.created))
         self.assertEqual(asyncio.run(ensure_payload_indexes(client, "c")), [])
 

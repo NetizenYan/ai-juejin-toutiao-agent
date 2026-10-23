@@ -60,16 +60,23 @@ def assert_meta_matches(model: str, dim: int) -> None:
 FILTER_PAYLOAD_FIELDS = ("chunk_type", "source", "evidence_id")
 
 
+# Range-filtered for explicit-date questions. Those searches run exact (brute force over the
+# matching points), so this index needs no filter-aware HNSW links and no graph rebuild.
+RANGE_PAYLOAD_FIELDS = ("publish_ts",)
+
+
 async def ensure_payload_indexes(client: AsyncQdrantClient, collection: str,
-                                 fields: tuple[str, ...] = FILTER_PAYLOAD_FIELDS) -> list[str]:
-    """Create missing keyword payload indexes; returns the fields that were created."""
+                                 fields: tuple[str, ...] = FILTER_PAYLOAD_FIELDS,
+                                 range_fields: tuple[str, ...] = RANGE_PAYLOAD_FIELDS) -> list[str]:
+    """Create missing keyword / integer payload indexes; returns the fields that were created."""
     info = await client.get_collection(collection)
     existing = set((info.payload_schema or {}).keys())
     created = []
-    for field in fields:
+    for field, schema in [(f, PayloadSchemaType.KEYWORD) for f in fields] + [
+        (f, PayloadSchemaType.INTEGER) for f in range_fields
+    ]:
         if field not in existing:
-            await client.create_payload_index(collection, field_name=field,
-                                              field_schema=PayloadSchemaType.KEYWORD, wait=True)
+            await client.create_payload_index(collection, field_name=field, field_schema=schema, wait=True)
             created.append(field)
     return created
 

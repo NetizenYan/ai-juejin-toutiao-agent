@@ -6,10 +6,11 @@ import re
 from collections.abc import Callable
 from typing import Any
 
-from qdrant_client.models import FieldCondition, Filter, MatchValue
+from qdrant_client.models import FieldCondition, Filter, MatchValue, Range, SearchParams
 
 from config.ai_conf import get_embedding_client, settings
 from config.vector_conf import CHUNK_COLLECTION, assert_meta_matches, get_qdrant
+from harness.date_window import DateWindow, explicit_date_window
 from harness.rag_query_router import (
     TIMELINE_RECENT_TRIGGERS,
     is_econ_finance_query,
@@ -52,12 +53,18 @@ def _source_filter_values(query: str) -> list[str]:
     return _matched_source_values(query)
 
 
-def _query_filter(chunk_type: str | None, source_values: list[str] | None = None) -> Filter | None:
+def _query_filter(
+    chunk_type: str | None,
+    source_values: list[str] | None = None,
+    date_window: DateWindow | None = None,
+) -> Filter | None:
     must = []
     if chunk_type:
         must.append(FieldCondition(key="chunk_type", match=MatchValue(value=chunk_type)))
     if source_values:
         must.append(FieldCondition(key="source", match=MatchValue(value=source_values[0])))
+    if date_window:
+        must.append(FieldCondition(key="publish_ts", range=Range(gte=date_window.start_ts, lt=date_window.end_ts)))
     return Filter(must=must) if must else None
 
 
@@ -85,8 +92,9 @@ async def _query_points(
     chunk_type_filter: str | None,
     collection_name: str,
     source_values: list[str] | None = None,
+    date_window: DateWindow | None = None,
 ) -> tuple[list[Any], bool]:
-    query_filter = _query_filter(chunk_type_filter, source_values)
+    query_filter = _query_filter(chunk_type_filter, source_values, date_window)
     kwargs = {
         "collection_name": collection_name,
         "query": vector,
@@ -95,6 +103,10 @@ async def _query_points(
     }
     if query_filter is not None:
         kwargs["query_filter"] = query_filter
+    if date_window:
+        # A date window keeps a small slice of the collection; scoring it exactly is cheap and,
+        # unlike HNSW, cannot miss points for want of filter-aware graph links.
+        kwargs["search_params"] = SearchParams(exact=True)
 
     try:
         result = await qdrant.query_points(**kwargs)
@@ -108,7 +120,8 @@ async def _query_points(
     points = list(getattr(result, "points", []) or [])
     if points or query_filter is None:
         return points, False
-    if source_values:
+    if source_values or date_window:
+        # Nothing in the requested source / period is the answer, not a reason to drop the filter.
         return [], False
 
     # Claude's existing chunk index has no chunk_type payload. Falling back here
@@ -285,14 +298,17 @@ async def _query_collections(
     chunk_type_filter: str | None,
     collections: list[str],
     source_values: list[str] | None = None,
+    date_window: DateWindow | None = None,
 ) -> tuple[list[Any], bool]:
     """Query each collection and merge by score (all collections share one embedding model)."""
     if len(collections) == 1:
-        return await _query_points(qdrant, vector, limit, chunk_type_filter, collections[0], source_values)
+        return await _query_points(qdrant, vector, limit, chunk_type_filter, collections[0], source_values, date_window)
     merged: list[Any] = []
     fallback_used = False
     for collection in collections:
-        points, fallback = await _query_points(qdrant, vector, limit, chunk_type_filter, collection, source_values)
+        points, fallback = await _query_points(
+            qdrant, vector, limit, chunk_type_filter, collection, source_values, date_window
+        )
         merged.extend(points)
         fallback_used = fallback_used or fallback
     merged.sort(key=lambda point: float(getattr(point, "score", 0.0) or 0.0), reverse=True)
@@ -437,10 +453,11 @@ async def search_news_rag(
     collections = _search_collections(query, collection_name)
     effective_body_slots = max(0, int(route.body_fallback_slots or 0))
     source_values = _source_filter_values(query) if route.query_type == "source_constrained" else []
+    date_window = explicit_date_window(query) if getattr(settings, "rag_explicit_date_filter_enabled", True) else None
     qdrant = qdrant_factory()
 
     summary_points, filter_fallback_used = await _query_collections(
-        qdrant, vector, candidate_limit, effective_chunk_type_filter, collections, source_values
+        qdrant, vector, candidate_limit, effective_chunk_type_filter, collections, source_values, date_window
     )
     summary_items = _points_to_items(summary_points)
     summary_items, time_aware_ranking = _rerank_items(query, summary_items, effective_ranking, route, now_ts)
@@ -455,7 +472,7 @@ async def search_news_rag(
     body_stale_filtered = 0
     if effective_body_slots:
         body_points, _body_filter_fallback = await _query_collections(
-            qdrant, vector, candidate_limit, "body", collections, source_values
+            qdrant, vector, candidate_limit, "body", collections, source_values, date_window
         )
         body_items = _points_to_items(body_points)
         body_items, _body_time_aware = _rerank_items(query, body_items, effective_ranking, route, now_ts)
@@ -481,6 +498,7 @@ async def search_news_rag(
         "stale_time_filtered": stale_filtered + body_stale_filtered,
         "collection_name": "+".join(collections),
         "collection_route": collection_reason,
+        "date_window": date_window.to_dict() if date_window else None,
     }
     result["evidence_ids"] = [
         evidence_id for item in result["items"] if (evidence_id := _item_evidence_id(item))

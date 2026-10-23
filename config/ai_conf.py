@@ -122,6 +122,8 @@ class AISettings:
     rag_body_fallback_slots: int = _int("RAG_BODY_FALLBACK_SLOTS", 0)
     rag_econ_collection_enabled: bool = _bool("RAG_ECON_COLLECTION_ENABLED", False)
     rag_econ_collection_name: str = os.getenv("RAG_ECON_COLLECTION_NAME", "toutiao_exp_econ_recent_20260621")
+    # "2026年5月…" style windows become a hard publish_ts filter (harness/date_window.py).
+    rag_explicit_date_filter_enabled: bool = _bool("RAG_EXPLICIT_DATE_FILTER_ENABLED", True)
     reranker_model: str = os.getenv("RERANKER_MODEL", "BAAI/bge-reranker-v2-m3")
 
     # Answer Contract / Validator gray rollout. Defaults: global shadow, econ route enforce.

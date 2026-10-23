@@ -606,6 +606,38 @@ class RagTimeAwareRankingTests(unittest.IsolatedAsyncioTestCase):
         await self._search_with("新闻联播关于三中全会公报的报道", fake)
         self.assertEqual(set(fake.collections), {rag_search.CHUNK_COLLECTION})
 
+    async def test_explicit_month_becomes_exact_publish_ts_range_search(self):
+        fake = _FakeQdrant([_point(0.7, {"news_id": "jjrb:1", "title": "进一步深化对新质生产力的认识", "chunk_text": "新质生产力。",
+                                         "publish_time": "2026-05-15 00:00:00", "source": "jjrb"})])
+        result = await self._search_with("我记得2026年5月经济日报发过一篇关于新质生产力的新闻", fake)
+
+        kwargs = fake.query_kwargs[0]
+        self.assertIn("publish_ts", str(kwargs["query_filter"]))
+        self.assertTrue(kwargs["search_params"].exact)
+        self.assertEqual(result["date_window"]["label"], "2026-05")
+
+    async def test_empty_date_window_is_not_widened_to_all_dates(self):
+        class _EmptyQdrant(_FakeQdrant):
+            async def query_points(self, **kwargs):
+                self.collections.append(kwargs.get("collection_name"))
+                self.query_kwargs.append(kwargs)
+                return SimpleNamespace(points=[] if kwargs.get("query_filter") else [
+                    _point(0.9, {"news_id": "rmrb:2", "title": "别的月份", "chunk_text": "x", "source": "rmrb"})])
+
+        fake = _EmptyQdrant([])
+        result = await self._search_with("2026年3月人民日报有没有报道全国一体化算力网", fake)
+
+        self.assertEqual(result["items"], [])
+        self.assertTrue(all(kw.get("query_filter") is not None for kw in fake.query_kwargs))
+
+    async def test_question_without_explicit_month_has_no_date_filter(self):
+        fake = _FakeQdrant([_point(0.7, {"news_id": "jjrb:1", "title": "服务业扩能提质", "chunk_text": "服务业。",
+                                         "publish_time": "2026-05-15 00:00:00", "source": "jjrb"})])
+        result = await self._search_with("到2030年服务业总规模迈上100万亿元台阶有什么报道", fake)
+
+        self.assertIsNone(result["date_window"])
+        self.assertNotIn("search_params", fake.query_kwargs[0])
+
 
 if __name__ == "__main__":
     unittest.main()
