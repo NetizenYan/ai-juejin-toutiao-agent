@@ -44,6 +44,13 @@ class AnswerQualityTests(unittest.TestCase):
         self.assertEqual(summary["overall"]["flags"], {"template": 1})
         self.assertIn("| 模板兜底 | 1 |", aq.render_markdown(summary))
 
+    def test_long_transcript_window_follows_the_answer(self):
+        transcript = "甲" * 2000 + "市场监管总局介绍市场监管如何支撑高质量发展" + "乙" * 2000
+
+        window = aq.best_window(transcript, "市场监管总局介绍了如何支撑高质量发展", size=100)
+
+        self.assertIn("市场监管总局", window)
+
 
 if __name__ == "__main__":
     unittest.main()

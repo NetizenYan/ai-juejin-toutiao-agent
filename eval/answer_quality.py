@@ -105,6 +105,30 @@ async def load_mysql_news(ids: set[int]) -> dict[str, dict[str, str]]:
     }
 
 
+def _bigrams(text: str) -> set[str]:
+    compact = re.sub(r"\s+", "", text or "")
+    return {compact[i:i + 2] for i in range(len(compact) - 1)}
+
+
+def best_window(text: str, answer: str, size: int = EVIDENCE_CHARS) -> str:
+    """The stretch of a long document that best matches the answer.
+
+    A 新闻联播 "article" is a whole day's transcript; the cited story is often deep inside it, so
+    grading against the first characters makes correct citations look unsupported.
+    """
+    value = re.sub(r"\s+", " ", str(text or "")).strip()
+    if len(value) <= size:
+        return value
+    target = _bigrams(answer)
+    best_start, best_score = 0, -1
+    for start in range(0, len(value) - size + 1, size // 4):
+        score = len(_bigrams(value[start:start + size]) & target)
+        if score > best_score:
+            best_start, best_score = start, score
+    prefix = "…" if best_start else ""
+    return prefix + value[best_start:best_start + size] + "…"
+
+
 def _turns(row: dict[str, Any]) -> list[str]:
     turns = row.get("turns")
     if isinstance(turns, list) and turns:
@@ -126,7 +150,7 @@ def build_packets(rows: list[dict[str, Any]], evidence: dict[str, dict[str, str]
             "is_template": is_template_answer(answer),
             "trace_stages": [step.get("stage") for step in ((row.get("done") or {}).get("validationTrace") or [])],
             "cited": [
-                {"ref": ref, **{k: (_clip(v, EVIDENCE_CHARS) if k == "text" else v)
+                {"ref": ref, **{k: (best_window(v, answer) if k == "text" else v)
                                 for k, v in evidence.get(ref, {"title": "", "date": "", "source": "", "text": "(未找到证据原文)"}).items()}}
                 for ref in cited
             ],
