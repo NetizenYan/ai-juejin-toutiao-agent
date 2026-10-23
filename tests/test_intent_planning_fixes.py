@@ -67,11 +67,12 @@ class ToolPlanningTests(unittest.TestCase):
         self.assertEqual(calls[0]["name"], "retrieve_news")
         self.assertLessEqual(len(calls[0]["arguments"]["query"]), MAX_RETRIEVAL_QUERY_CHARS)
 
-    def test_model_planned_call_is_used_first(self):
+    def test_model_planned_query_is_kept_after_the_question(self):
         client = _PlanningClient(_tool_message("retrieve_news", '{"query": "芯片 产业 新闻"}'))
         calls = _plan(client, "最近芯片有什么新闻")
         self.assertEqual(client.calls, 1)
-        self.assertEqual(calls[0]["arguments"]["query"], "芯片 产业 新闻")
+        # The question itself is retrieved first; the planner's keyword query widens recall.
+        self.assertEqual([c["arguments"]["query"] for c in calls], ["最近芯片有什么新闻", "芯片 产业 新闻"])
 
     def test_model_failure_falls_back_to_rules(self):
         calls = _plan(_PlanningClient(error=RuntimeError("down")), "最近芯片有什么新闻")

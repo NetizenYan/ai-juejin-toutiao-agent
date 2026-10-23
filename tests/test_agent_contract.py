@@ -64,6 +64,33 @@ class AgentContractTests(unittest.TestCase):
         self.assertIn("[news:jjrb:001]", messages[-1]["content"])
         self.assertIn("字数", messages[-1]["content"])
 
+    def test_planned_keyword_queries_follow_the_question_query(self):
+        question = [{"name": "retrieve_news", "arguments": {"query": "人民日报关于住建工作会议的报道讲了什么？", "limit": 5}}]
+        planned = [
+            {"name": "retrieve_news", "arguments": {"query": "人民日报 住建 工作会议", "limit": 10}},
+            {"name": "retrieve_news", "arguments": {"query": "住建工作会议 房地产", "limit": 10}},
+        ]
+
+        calls = agent._anchor_retrieval_on_question(planned, question)
+
+        self.assertEqual(calls[0]["arguments"]["query"], "人民日报关于住建工作会议的报道讲了什么？")
+        self.assertEqual(len(calls), 3)
+        # Non-retrieval plans are left alone.
+        detail = [{"name": "news_detail", "arguments": {"news_id": 1}}]
+        self.assertEqual(agent._anchor_retrieval_on_question(detail, question), detail)
+
+    def test_retrieval_results_are_pooled_into_the_first_call(self):
+        results = [
+            {"tool": "retrieve_news", "items": [{"id": "a", "chunk_text": "x"}], "collection_route": "econ_finance_query"},
+            {"tool": "retrieve_news", "items": [{"id": "a", "chunk_text": "x"}, {"id": "b", "chunk_text": "y"}]},
+        ]
+
+        agent._merge_retrieval_results(results)
+
+        self.assertEqual([item["id"] for item in results[0]["items"]], ["a", "b"])
+        self.assertEqual(results[1]["items"], [])
+        self.assertTrue(results[1]["merged_into_first_retrieval"])
+
     def test_fallback_routes_news_question_to_search_tool(self):
         calls = build_fallback_tool_calls("帮我找一下AI芯片相关资讯")
 

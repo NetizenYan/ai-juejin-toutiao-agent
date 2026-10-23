@@ -470,9 +470,46 @@ async def _plan_tool_calls(client: LLMClient, history_messages: list[dict],
         except Exception:  # noqa: BLE001 - 本地模型 tool calling 不稳定 → fallback
             validated = []
 
+    deterministic = _validate_tool_calls(_deterministic_tool_calls(latest_user, user_id=user_id), allowed, user_id)
     if not validated:
-        validated = _validate_tool_calls(_deterministic_tool_calls(latest_user, user_id=user_id), allowed, user_id)
-    return validated
+        return deterministic
+    return _anchor_retrieval_on_question(validated, deterministic)
+
+
+def _anchor_retrieval_on_question(planned: list[dict], deterministic: list[dict]) -> list[dict]:
+    """Keep the user's own question as the first retrieval query.
+
+    Planner models rewrite questions into keyword lists ("平陆运河 北部湾 经济效应") and may drop
+    the source ("人民日报"), which turns off the source filter. Their queries still widen recall,
+    so they are kept after the question; results are merged and reranked against the question.
+    """
+    if not any(call["name"] == "retrieve_news" for call in planned):
+        return planned
+    question_calls = [call for call in deterministic if call["name"] == "retrieve_news"]
+    question_queries = {call["arguments"].get("query") for call in question_calls}
+    extra = [call for call in planned if not (call["name"] == "retrieve_news" and call["arguments"].get("query") in question_queries)]
+    return (question_calls + extra)[: settings.max_tool_calls_per_turn]
+
+
+def _merge_retrieval_results(tool_results: list[dict]) -> None:
+    """Pool the chunks of every retrieve_news call into the first one, so they are reranked once
+    against the question and the evidence pack keeps RAG_TOP items instead of RAG_TOP per call."""
+    retrievals = [r for r in tool_results if r.get("tool") == "retrieve_news" and not r.get("error")]
+    if len(retrievals) < 2:
+        return
+    first = retrievals[0]
+    seen = {(item.get("evidence_id") or item.get("id"), item.get("chunk_text")) for item in first.get("items") or []}
+    pooled = list(first.get("items") or [])
+    for other in retrievals[1:]:
+        for item in other.get("items") or []:
+            key = (item.get("evidence_id") or item.get("id"), item.get("chunk_text"))
+            if key not in seen:
+                seen.add(key)
+                pooled.append(item)
+        other["items"] = []
+        other["evidence_ids"] = []
+        other["merged_into_first_retrieval"] = True
+    first["items"] = pooled
 
 
 def _validate_tool_calls(raw_calls: list[dict], allowed: set[str], user_id: int | None) -> list[dict]:
@@ -1487,6 +1524,7 @@ async def run_chat(history_messages: list[dict], db: Optional[AsyncSession] = No
 
     # RAG 精排 + 父子聚合：chunk 级 cross-encoder 重排 → 聚合到 parent news_id（取最佳 chunk）
     # → 轻时间衰减 → 标题去重 → top-K 父文档
+    _merge_retrieval_results(tool_results)
     for result in tool_results:
         if result.get("tool") == "retrieve_news" and result.get("items"):
             rerank_query = str(result.get("_ocr_compare_query") or retrieval_user)
