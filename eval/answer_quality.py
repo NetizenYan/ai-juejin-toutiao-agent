@@ -49,6 +49,8 @@ RUBRIC = """你是新闻问答系统的评审。只依据给出的引用证据�
 - completeness 完整：2=覆盖了问题需要的要点（多文档题要综合多篇）；1=只覆盖一部分；0=几乎没有实质内容。
 - constraints 约束：2=遵守了用户提出的字数、简短、带引用、保守表达等要求，投资类问题没有确定性判断；1=部分违反；0=明显违反。
 再给 usefulness 总体有用度 1-5（5=用户拿到就能用；3=有点用但要追问；1=没用）。
+证据里确实没有能回答问题的内容时，明确说明未找到的正确拒答算有用，usefulness 给 4；证据里有答案却拒答，给 over_refusal 并按没用处理。
+数字、名称要核对是否挂在了证据里的正确对象上（例如 A 赛事的门票收入不能写成 B 赛事的）。
 flags 从 template（只是标题罗列的模板回答）、unsupported_claim、off_topic、over_refusal（有可用证据却拒答）中选，可为空。
 只输出一行 JSON：{"relevance":..,"faithfulness":..,"completeness":..,"constraints":..,"usefulness":..,"flags":[..],"comment":"一句话理由"}"""
 
