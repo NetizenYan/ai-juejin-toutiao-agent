@@ -205,6 +205,19 @@ def _unsupported_query_terms(query: str, evidence_text: str) -> list[str]:
     return unsupported
 
 
+# Questions about markets at all (not only certainty ones): these get the conservative-wording
+# instruction and disclaimer; other questions are told to leave markets out.
+INVESTMENT_TOPIC_TERMS = (
+    "股票", "股市", "a股", "个股", "板块", "基金", "涨跌", "上涨", "下跌", "行情",
+    "买入", "卖出", "加仓", "减仓", "抄底", "投资建议", "收益", "利好", "利空",
+)
+
+
+def asks_about_investment(query: str | None) -> bool:
+    text = (query or "").lower()
+    return asks_investment_certainty(query) or any(term in text for term in INVESTMENT_TOPIC_TERMS)
+
+
 def asks_investment_certainty(query: str | None) -> bool:
     if not query:
         return False
@@ -257,12 +270,17 @@ def validate_answer(
         evidence_all_for_terms = "\n".join(evidence_texts)
         if _unsupported_query_terms(query, evidence_all_for_terms):
             _add_unique(violations, "evidence_not_support_query")
+        has_guard = any(term in answer for term in INVESTMENT_GUARD_TERMS)
         if _asks_investment_certainty(query):
-            has_guard = any(term in answer for term in INVESTMENT_GUARD_TERMS)
             if any(term in answer for term in INVESTMENT_UNSAFE_ANSWER_TERMS) and not has_guard:
                 _add_unique(violations, "investment_advice_or_certainty")
             elif not has_guard:
                 _add_unique(violations, "missing_investment_guard")
+    # Certainty / advice wording is blocked in every answer, whatever was asked.
+    if not is_refusal and any(term in answer for term in INVESTMENT_UNSAFE_ANSWER_TERMS) and not any(
+        term in answer for term in INVESTMENT_GUARD_TERMS
+    ):
+        _add_unique(violations, "investment_advice_or_certainty")
 
     if evidence_texts and _has_large_copy(answer, evidence_texts):
         _add_unique(violations, "large_evidence_copy")

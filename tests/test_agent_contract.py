@@ -120,10 +120,17 @@ class AgentContractTests(unittest.TestCase):
         self.assertIn("不要给买卖建议", agent.DEFAULT_SYSTEM_PROMPT)
 
     def test_answer_contract_prompt_blocks_stock_prediction_and_advice(self):
-        contract_text = agent._contract_prompt(agent.AnswerContract())
+        contract_text = agent._contract_prompt(agent.AnswerContract(), "新质生产力对半导体板块可能有什么影响？")
 
         self.assertIn("不预测涨跌", contract_text)
         self.assertIn("不给买卖建议", contract_text)
+        self.assertIn("不构成投资建议", contract_text)
+
+    def test_non_investment_question_is_told_not_to_add_disclaimers(self):
+        contract_text = agent._contract_prompt(agent.AnswerContract(), "只看经济日报，新质生产力如何影响制造业？")
+
+        self.assertIn("不要主动延伸到股市", contract_text)
+        self.assertNotIn("注明不构成投资建议", contract_text)
 
     def test_unsupported_query_validation_forces_no_answer_even_in_shadow(self):
         validation = agent.AnswerValidationResult(

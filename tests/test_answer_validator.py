@@ -187,6 +187,27 @@ class AnswerValidatorTests(unittest.TestCase):
 
         self.assertTrue(result.passed)
 
+    def test_advice_wording_is_blocked_even_when_not_asked(self):
+        result = validate_answer(
+            "制造业加快升级，建议买入相关龙头。[news:jjrb:8dcc9e6349959132]",
+            self._contract(),
+            self._evidence(),
+            query="新质生产力如何影响制造业？",
+        )
+
+        self.assertFalse(result.passed)
+        self.assertIn("investment_advice_or_certainty", result.constraint_violations)
+
+    def test_non_investment_answer_needs_no_disclaimer(self):
+        result = validate_answer(
+            "新质生产力推动制造业升级。[news:jjrb:8dcc9e6349959132]",
+            self._contract(),
+            self._evidence(),
+            query="新质生产力如何影响制造业？",
+        )
+
+        self.assertTrue(result.passed)
+
     def test_shadow_failed_result_records_would_rewrite_without_rewrite_count(self):
         result = validate_answer("最近报道主要关注新质生产力。", self._contract(), self._evidence())
 
