@@ -51,6 +51,18 @@ class AnswerQualityTests(unittest.TestCase):
 
         self.assertIn("市场监管总局", window)
 
+    def test_agreement_reports_kappa_and_large_disagreements(self):
+        a = [{"id": "x", "usefulness": 5, **dict.fromkeys(aq.DIMENSIONS, 2)},
+             {"id": "y", "usefulness": 1, **dict.fromkeys(aq.DIMENSIONS, 1)}]
+        b = [{"id": "x", "usefulness": 4, **dict.fromkeys(aq.DIMENSIONS, 2)},
+             {"id": "y", "usefulness": 4, **dict.fromkeys(aq.DIMENSIONS, 2)}]
+
+        result = aq.agreement(a, b)
+
+        self.assertEqual(result["n"], 2)
+        self.assertEqual(result["usefulness_within_1"], 0.5)
+        self.assertEqual([d["id"] for d in result["large_disagreements"]], ["y"])
+
 
 if __name__ == "__main__":
     unittest.main()

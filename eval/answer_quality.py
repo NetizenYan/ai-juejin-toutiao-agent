@@ -186,26 +186,35 @@ def parse_judgment(text: str) -> dict[str, Any] | None:
     return data
 
 
-async def judge_packets(packets: list[dict[str, Any]], *, base_url: str, api_key: str, model: str) -> list[dict[str, Any]]:
+async def judge_packets(packets: list[dict[str, Any]], *, base_url: str, api_key: str, model: str,
+                        concurrency: int = 4) -> list[dict[str, Any]]:
     import httpx
 
-    scores = []
-    async with httpx.AsyncClient(base_url=base_url.rstrip("/"), timeout=120) as client:
-        for packet in packets:
-            response = await client.post(
-                "/chat/completions",
-                headers={"Authorization": f"Bearer {api_key}"},
-                json={
-                    "model": model,
-                    "temperature": 0,
-                    "messages": [{"role": "system", "content": RUBRIC}, {"role": "user", "content": judge_prompt(packet)}],
-                },
-            )
-            response.raise_for_status()
-            content = response.json()["choices"][0]["message"]["content"]
-            parsed = parse_judgment(content)
-            scores.append({"id": packet["id"], "grader": model, **(parsed or {"error": "unparseable", "raw": content[:500]})})
-    return scores
+    semaphore = asyncio.Semaphore(max(1, concurrency))
+
+    async def judge_one(client: Any, packet: dict[str, Any]) -> dict[str, Any]:
+        async with semaphore:
+            try:
+                response = await client.post(
+                    "/chat/completions",
+                    headers={"Authorization": f"Bearer {api_key}"},
+                    json={
+                        "model": model,
+                        "temperature": 0,
+                        "messages": [{"role": "system", "content": RUBRIC}, {"role": "user", "content": judge_prompt(packet)}],
+                    },
+                )
+                response.raise_for_status()
+                body = response.json()
+            except Exception as exc:  # noqa: BLE001 - one failed call must not lose the other grades
+                return {"id": packet["id"], "grader": model, "error": type(exc).__name__}
+        content = body["choices"][0]["message"]["content"] or ""
+        parsed = parse_judgment(content)
+        return {"id": packet["id"], "grader": model, "usage": body.get("usage"),
+                **(parsed or {"error": "unparseable", "raw": content[:500]})}
+
+    async with httpx.AsyncClient(base_url=base_url.rstrip("/"), timeout=300) as client:
+        return list(await asyncio.gather(*(judge_one(client, packet) for packet in packets)))
 
 
 def summarize(packets: list[dict[str, Any]], scores: list[dict[str, Any]]) -> dict[str, Any]:
@@ -233,6 +242,40 @@ def summarize(packets: list[dict[str, Any]], scores: list[dict[str, Any]]) -> di
         "by_case_type": {key: block(value) for key, value in sorted(by_type.items())},
         "graders": dict(Counter(score.get("grader") for score in valid)),
         "missing": sorted(set(by_id) - {score["id"] for score in valid}),
+    }
+
+
+def agreement(scores_a: list[dict[str, Any]], scores_b: list[dict[str, Any]]) -> dict[str, Any]:
+    """How far two graders agree on the same answers (e.g. Claude vs another judge model)."""
+    a = {s["id"]: s for s in scores_a if "usefulness" in s}
+    b = {s["id"]: s for s in scores_b if "usefulness" in s}
+    ids = sorted(set(a) & set(b))
+    if not ids:
+        return {"n": 0}
+    ua, ub = [a[i]["usefulness"] for i in ids], [b[i]["usefulness"] for i in ids]
+    useful_a, useful_b = [u >= 4 for u in ua], [u >= 4 for u in ub]
+    observed = sum(x == y for x, y in zip(useful_a, useful_b)) / len(ids)
+    pa, pb = sum(useful_a) / len(ids), sum(useful_b) / len(ids)
+    expected = pa * pb + (1 - pa) * (1 - pb)
+    kappa = (observed - expected) / (1 - expected) if expected < 1 else 1.0
+    return {
+        "n": len(ids),
+        "usefulness_mean_a": round(statistics.mean(ua), 3),
+        "usefulness_mean_b": round(statistics.mean(ub), 3),
+        "useful_rate_a": round(pa, 3),
+        "useful_rate_b": round(pb, 3),
+        "usefulness_exact": round(sum(x == y for x, y in zip(ua, ub)) / len(ids), 3),
+        "usefulness_within_1": round(sum(abs(x - y) <= 1 for x, y in zip(ua, ub)) / len(ids), 3),
+        "useful_agreement": round(observed, 3),
+        "useful_kappa": round(kappa, 3),
+        "dimension_mean_diff_b_minus_a": {
+            key: round(statistics.mean(b[i][key] - a[i][key] for i in ids), 3) for key in DIMENSIONS
+        },
+        "large_disagreements": [
+            {"id": i, "a": a[i]["usefulness"], "b": b[i]["usefulness"],
+             "a_comment": a[i].get("comment"), "b_comment": b[i].get("comment")}
+            for i in ids if abs(a[i]["usefulness"] - b[i]["usefulness"]) >= 2
+        ],
     }
 
 
@@ -313,10 +356,14 @@ def main() -> None:
     j = sub.add_parser("judge")
     j.add_argument("--packets", required=True)
     j.add_argument("--out", required=True)
+    j.add_argument("--concurrency", type=int, default=4)
     s = sub.add_parser("summarize")
     s.add_argument("--packets", required=True)
     s.add_argument("--scores", required=True, nargs="+")
     s.add_argument("--report", default="")
+    c = sub.add_parser("compare")
+    c.add_argument("--a", required=True, nargs="+", help="score files of grader A")
+    c.add_argument("--b", required=True, nargs="+", help="score files of grader B")
     args = parser.parse_args()
 
     if args.command == "packets":
@@ -325,9 +372,13 @@ def main() -> None:
         base_url, api_key, model = (os.getenv("JUDGE_API_BASE"), os.getenv("JUDGE_API_KEY"), os.getenv("JUDGE_MODEL"))
         if not (base_url and api_key and model):
             raise SystemExit("set JUDGE_API_BASE, JUDGE_API_KEY and JUDGE_MODEL")
-        scores = asyncio.run(judge_packets(_read_jsonl(args.packets), base_url=base_url, api_key=api_key, model=model))
+        scores = asyncio.run(judge_packets(_read_jsonl(args.packets), base_url=base_url, api_key=api_key, model=model,
+                                           concurrency=args.concurrency))
         _write_jsonl(args.out, scores)
         print(f"{len(scores)} scores -> {args.out}")
+    elif args.command == "compare":
+        result = agreement([r for p in args.a for r in _read_jsonl(p)], [r for p in args.b for r in _read_jsonl(p)])
+        print(json.dumps(result, ensure_ascii=False, indent=2))
     else:
         scores = [row for path in args.scores for row in _read_jsonl(path)]
         summary = summarize(_read_jsonl(args.packets), scores)
