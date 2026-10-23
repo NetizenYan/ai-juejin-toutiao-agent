@@ -1,7 +1,13 @@
 import unittest
 
 from harness.answer_contract import AnswerContract
-from harness.answer_validator import asks_investment_certainty, extract_citations, is_refusal, validate_answer
+from harness.answer_validator import (
+    asks_investment_certainty,
+    declines_to_answer,
+    extract_citations,
+    is_refusal,
+    validate_answer,
+)
 
 
 class AnswerValidatorTests(unittest.TestCase):
@@ -225,6 +231,13 @@ class AnswerValidatorTests(unittest.TestCase):
         ):
             result = validate_answer(answer, self._contract(), self._evidence(), query="这些政策是不是一定利好半导体？")
             self.assertTrue(result.passed, (answer, result.constraint_violations))
+
+    def test_long_explained_refusal_declines_but_is_not_a_passing_refusal(self):
+        answer = ("站内未找到可靠新闻证据，无法确认《新闻联播》在最近一周报道了哪些具体重大会议。"
+                  "建议您换一个更精确的时间范围或会议名称关键词再试。")
+        self.assertTrue(declines_to_answer(answer))
+        self.assertFalse(is_refusal(answer))
+        self.assertFalse(declines_to_answer("相关报道聚焦制造业 [news:jjrb:1]，站内未找到更多报道。"))
 
     def test_shadow_failed_result_records_would_rewrite_without_rewrite_count(self):
         result = validate_answer("最近报道主要关注新质生产力。", self._contract(), self._evidence())

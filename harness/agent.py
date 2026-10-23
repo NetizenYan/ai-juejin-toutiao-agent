@@ -36,6 +36,7 @@ from harness.answer_contract import build_answer_contract, parse_enforce_routes,
 from harness.citation_repair import repair_citations
 from harness.answer_validator import (
     AnswerValidationResult,
+    declines_to_answer,
     asks_about_investment,
     asks_investment_certainty,
     is_refusal,
@@ -1625,6 +1626,13 @@ async def run_chat(history_messages: list[dict], db: Optional[AsyncSession] = No
             _trace_step(trace, f"rewrite_{rewrite_count}", answer, validation)
             if validation.passed:
                 break
+
+    if mode == "enforce" and not validation.passed and declines_to_answer(answer):
+        # The model judged the evidence insufficient (e.g. only years-old reports for "最近一周");
+        # a title-list template would dress that evidence up as "近期相关报道".
+        answer = _refusal_for_query(latest_user)
+        validation = validate_answer(answer, contract, evidence_pack, query=latest_user)
+        _trace_step(trace, "refusal_after_fail", answer, validation)
 
     if mode == "enforce" and not validation.passed:
         answer = _deterministic_evidence_answer(tool_results, contract, query=latest_user)

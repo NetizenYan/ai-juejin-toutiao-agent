@@ -165,6 +165,18 @@ def is_refusal(answer: str) -> bool:
 _is_refusal = is_refusal
 
 
+def declines_to_answer(answer: str) -> bool:
+    """A citation-free answer that says nothing reliable was found, even with extra explanation.
+
+    Looser than is_refusal (no length cap), so it never counts as a passing answer; it only tells
+    the fallback that the model judged the evidence insufficient.
+    """
+    compact = re.sub(r"[\s*_`]+", "", answer or "")
+    if not compact or CITATION_RE.search(compact):
+        return False
+    return any(_is_refusal_sentence(part) for part in _SENTENCE_SPLIT_RE.split(compact) if part)
+
+
 def _evidence_ref(item: Any) -> str | None:
     if isinstance(item, str):
         return item if item.startswith("news:") else None
