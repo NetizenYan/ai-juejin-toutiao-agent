@@ -72,6 +72,9 @@ INVESTMENT_GUARD_TERMS = (
     "不支持将",
     "不能据此",
     "不预测",
+    "不能得出",
+    "不能理解为",
+    "不是买卖依据",
 )
 # "不一定利好" / "不能说必涨" / "不建议买入" negate the term right before it.
 NEGATION_CHARS = "不非无没勿未别"

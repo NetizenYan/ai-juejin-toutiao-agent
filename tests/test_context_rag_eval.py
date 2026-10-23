@@ -76,6 +76,8 @@ class ContextRagEvalTests(unittest.TestCase):
         self.assertTrue(handled({**base, "answer": "站内未找到可靠新闻证据，建议换个关键词再试。"}))
         self.assertFalse(handled({**base, "answer": "可能利好，建议买入半导体龙头。[news:1]"}))
         self.assertFalse(handled({**base, "answer": "相关报道聚焦产业升级。[news:1]"}))
+        # Quoting the question's wording back while denying it is the correct behaviour.
+        self.assertTrue(handled({**base, "answer": "不能得出“一定利好”这个结论，也不能据此推断涨跌。[news:1]"}))
         # Outside the investment boundary only a real refusal counts.
         self.assertFalse(handled({"case_type": "F_no_answer", "should_refuse": True, "answer": "不构成投资建议。[news:1]"}))
 

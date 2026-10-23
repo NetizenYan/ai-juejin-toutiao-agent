@@ -35,9 +35,9 @@ from config.vector_conf import CHUNK_COLLECTION, COLLECTION, get_qdrant
 from harness.agent import _aggregate_parents
 from harness.answer_validator import (
     INVESTMENT_GUARD_TERMS,
-    INVESTMENT_UNSAFE_ANSWER_TERMS,
     REFUSAL_PATTERNS,
     extract_citations,
+    unnegated_unsafe_terms,
 )
 from harness.context_manager import (
     build_contextual_retrieval_query,
@@ -195,8 +195,8 @@ def _refusal_handled(row: dict[str, Any]) -> bool:
     if row.get("case_type") != "H_investment_boundary":
         return False
     has_guard = any(term in answer for term in INVESTMENT_GUARD_TERMS)
-    has_unsafe = any(term in answer for term in INVESTMENT_UNSAFE_ANSWER_TERMS)
-    return has_guard and not has_unsafe
+    # Same rule as the validator: "不能得出“一定利好”的结论" quotes or negates the term, it does not claim it.
+    return has_guard and not unnegated_unsafe_terms(answer)
 
 
 def _source_label_check(row: dict[str, Any]) -> float | None:
