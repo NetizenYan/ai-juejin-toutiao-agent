@@ -1295,6 +1295,7 @@ REWRITE_HINTS = {
     "large_evidence_copy": "大段照抄了原文，请用自己的话概括",
     "non_evidence_expression": "不要用“我认为”“据我了解”等证据外的说法",
     "no_evidence_fact_answer": "没有证据时只能说明站内未找到，不能给出新闻事实",
+    "unsupported_number_or_date": "这些数字或日期在证据里找不到：{numbers}，请删去或改成证据中的原数",
 }
 
 
@@ -1305,10 +1306,12 @@ def _rewrite_messages(
     draft: str,
     session_context: SessionContext | None = None,
     violations: list[str] | None = None,
+    unsupported_numbers: list[str] | None = None,
 ) -> list[dict]:
     messages = _build_final_messages(history_messages, results, contract, session_context=session_context)
     refs = "、".join(f"[{item['ref']}]" for item in _build_evidence_pack(results)) or "（无）"
-    problems = [REWRITE_HINTS[v].format(refs=refs) for v in violations or [] if v in REWRITE_HINTS]
+    numbers = "、".join(unsupported_numbers or []) or "（见上一版）"
+    problems = [REWRITE_HINTS[v].format(refs=refs, numbers=numbers) for v in violations or [] if v in REWRITE_HINTS]
     # The draft goes inside a user turn: ending on an assistant message makes chat models
     # continue it (empty or half-sentence output) instead of rewriting.
     messages.append({
@@ -1616,6 +1619,7 @@ async def run_chat(history_messages: list[dict], db: Optional[AsyncSession] = No
                     _rewrite_messages(
                         effective_history, tool_results, contract, answer,
                         session_context=session_context, violations=validation.constraint_violations,
+                        unsupported_numbers=validation.unsupported_numbers,
                     )
                 )
                 answer = _repair_answer_citations(answer, evidence_refs, trace, f"rewrite_{rewrite_count}")

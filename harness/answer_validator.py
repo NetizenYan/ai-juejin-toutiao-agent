@@ -110,6 +110,7 @@ class AnswerValidationResult:
     invalid_refs: list[str] = field(default_factory=list)
     unsupported_warnings: list[str] = field(default_factory=list)
     risk_reasons: list[str] = field(default_factory=list)
+    unsupported_numbers: list[str] = field(default_factory=list)
 
     def to_metadata(self, mode: str, rewrite_count: int) -> dict[str, Any]:
         return {
@@ -122,6 +123,7 @@ class AnswerValidationResult:
             "hallucination_risk": self.hallucination_risk,
             "risk_reasons": list(self.risk_reasons),
             "unsupported_warnings": list(self.unsupported_warnings),
+            "unsupported_numbers": list(self.unsupported_numbers),
         }
 
     def to_done_summary(self, mode: str, rewrite_count: int) -> dict[str, Any]:
@@ -228,6 +230,14 @@ def _has_large_copy(answer: str, evidence_texts: list[str], threshold: int = 50)
     return False
 
 
+NUMBER_RE = re.compile(r"\d{2,4}(?:\.\d+)?")
+
+
+def _numbers(text: str) -> set[str]:
+    """2-4 digit figures; "12.5" and "12.5%" compare equal."""
+    return set(NUMBER_RE.findall(text or ""))
+
+
 def _add_unique(items: list[str], value: str) -> None:
     if value not in items:
         items.append(value)
@@ -320,14 +330,18 @@ def validate_answer(
     if evidence_texts and _has_large_copy(answer, evidence_texts):
         _add_unique(violations, "large_evidence_copy")
 
-    evidence_all = "\n".join(evidence_texts)
-    answer_without_citations = CITATION_RE.sub("", answer)
-    answer_numbers = set(re.findall(r"\d{2,4}(?:\.\d+)?%?", answer_without_citations))
-    evidence_numbers = set(re.findall(r"\d{2,4}(?:\.\d+)?%?", evidence_all))
-    unsupported_numbers = answer_numbers - evidence_numbers
+    # Publication dates and the user's own numbers count as supported ("3月16日发布", "2026年5月…").
+    supported_text = "\n".join(
+        evidence_texts + [str(item.get("publish_time") or "") for item in evidence_pack if isinstance(item, dict)] + [query or ""]
+    )
+    unsupported_numbers = sorted(_numbers(CITATION_RE.sub("", answer)) - _numbers(supported_text))
     if unsupported_numbers:
         _add_unique(warnings, "possible_unsupported_number_or_date")
         _add_unique(risk_reasons, "possible_unsupported_number_or_date")
+        if not is_refusal:
+            # A figure or date found nowhere in the evidence is the commonest concrete hallucination
+            # (e.g. a 2019 provincial document cited from nowhere); it fails, so it gets rewritten.
+            _add_unique(violations, "unsupported_number_or_date")
 
     passed = not violations
     if violations:
@@ -343,6 +357,7 @@ def validate_answer(
         hallucination_risk=hallucination_risk,
         constraint_violations=violations,
         invalid_refs=invalid_refs,
+        unsupported_numbers=unsupported_numbers,
         unsupported_warnings=warnings,
         risk_reasons=risk_reasons,
     )

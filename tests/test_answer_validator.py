@@ -249,15 +249,28 @@ class AnswerValidatorTests(unittest.TestCase):
         self.assertEqual(metadata["rewriteCount"], 0)
         self.assertEqual(metadata["mode"], "shadow")
 
-    def test_unsupported_claim_is_warning_not_hard_fail(self):
+    def test_number_missing_from_evidence_fails(self):
         result = validate_answer(
             "相关报道提到新质生产力，另有2030年数据预测。[news:jjrb:8dcc9e6349959132]",
             self._contract(),
             self._evidence(),
         )
 
-        self.assertTrue(result.passed)
-        self.assertIn("possible_unsupported_number_or_date", result.risk_reasons)
+        self.assertFalse(result.passed)
+        self.assertIn("unsupported_number_or_date", result.constraint_violations)
+        self.assertEqual(result.unsupported_numbers, ["2030"])
+
+    def test_publish_date_query_numbers_and_percent_forms_are_supported(self):
+        evidence = [{"ref": "news:jjrb:1", "title": "高技术制造业增长", "snippet": "增加值同比增长12.5%",
+                     "publish_time": "2026-03-16 00:00:00"}]
+        result = validate_answer(
+            "这篇报道发布于2026年3月16日，高技术制造业增长12.5 [news:jjrb:1]，回应了2027年的问题。",
+            self._contract(),
+            evidence,
+            query="2027年目标和高技术制造业有什么报道？",
+        )
+
+        self.assertTrue(result.passed, result.constraint_violations)
 
 
 if __name__ == "__main__":
