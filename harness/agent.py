@@ -1259,10 +1259,13 @@ async def _complete_with_fallback(
     contract: AnswerContract,
     timeout_seconds: float,
     query: str | None = None,
+    trace: list[dict] | None = None,
 ) -> str:
     try:
         return await asyncio.wait_for(client.complete(messages), timeout=max(0.001, timeout_seconds))
-    except Exception:  # noqa: BLE001 - keep SSE responsive when the local model is slow or unavailable.
+    except Exception as exc:  # noqa: BLE001 - keep SSE responsive when the local model is slow or unavailable.
+        if trace is not None:
+            trace.append({"stage": "llm_error", "error": type(exc).__name__})
         if contract.evidence_only:
             return _deterministic_evidence_answer(tool_results, contract, query=query)
         return _fallback_answer(tool_results)
@@ -1288,6 +1291,21 @@ def _rewrite_messages(
     return messages
 
 
+# Per-step record of how the emitted answer was reached; tells apart "model answer failed
+# validation" from "model refused" or "model timed out" when the template fallback shows up.
+TRACE_ANSWER_PREVIEW_CHARS = 300
+
+
+def _trace_step(trace: list[dict], stage: str, answer: str, validation: AnswerValidationResult) -> None:
+    trace.append({
+        "stage": stage,
+        "passed": validation.passed,
+        "violations": list(validation.constraint_violations),
+        "chars": len(answer or ""),
+        "preview": (answer or "")[:TRACE_ANSWER_PREVIEW_CHARS],
+    })
+
+
 def _record_validation(
     validation_sink: Optional[dict],
     result: AnswerValidationResult,
@@ -1295,6 +1313,7 @@ def _record_validation(
     mode: str,
     rewrite_count: int,
     route: str | None,
+    trace: list[dict] | None = None,
 ) -> None:
     if validation_sink is None:
         return
@@ -1311,6 +1330,9 @@ def _record_validation(
         "metadata": metadata,
         "summary": result.to_done_summary(mode=mode, rewrite_count=rewrite_count),
     })
+    if trace is not None:
+        # Kept beside metadata so draft answers are not persisted with the message.
+        validation_sink["trace"] = trace
 
 
 async def run_chat(history_messages: list[dict], db: Optional[AsyncSession] = None,
@@ -1519,6 +1541,7 @@ async def run_chat(history_messages: list[dict], db: Optional[AsyncSession] = No
     )
 
     messages = _build_final_messages(effective_history, tool_results, contract, session_context=session_context)
+    trace: list[dict] = []
     answer = await _complete_with_fallback(
         client,
         messages,
@@ -1526,6 +1549,7 @@ async def run_chat(history_messages: list[dict], db: Optional[AsyncSession] = No
         contract,
         timeout_seconds=settings.llm_timeout_seconds,
         query=latest_user,
+        trace=trace,
     )
     answer = _ensure_confirmed_anchor_warning(answer, session_context)
 
@@ -1536,9 +1560,11 @@ async def run_chat(history_messages: list[dict], db: Optional[AsyncSession] = No
 
     rewrite_count = 0
     validation = validate_answer(answer, contract, evidence_pack, query=latest_user)
+    _trace_step(trace, "initial", answer, validation)
     if _should_force_no_answer(validation):
         answer = _refusal_for_query(latest_user)
         validation = validate_answer(answer, contract, evidence_pack, query=latest_user)
+        _trace_step(trace, "force_no_answer", answer, validation)
 
     if mode == "enforce" and not validation.passed and settings.answer_rewrite_on_fail:
         max_attempts = max(0, settings.answer_max_rewrite_attempts)
@@ -1548,15 +1574,18 @@ async def run_chat(history_messages: list[dict], db: Optional[AsyncSession] = No
                 answer = await client.complete(
                     _rewrite_messages(effective_history, tool_results, contract, answer, session_context=session_context)
                 )
-            except Exception:  # noqa: BLE001
+            except Exception as exc:  # noqa: BLE001
+                trace.append({"stage": "rewrite_error", "error": type(exc).__name__})
                 answer = _no_answer_response()
             validation = validate_answer(answer, contract, evidence_pack, query=latest_user)
+            _trace_step(trace, f"rewrite_{rewrite_count}", answer, validation)
             if validation.passed:
                 break
 
     if mode == "enforce" and not validation.passed:
         answer = _deterministic_evidence_answer(tool_results, contract, query=latest_user)
         validation = validate_answer(answer, contract, evidence_pack, query=latest_user)
+        _trace_step(trace, "deterministic_after_fail", answer, validation)
 
     # Declining a certainty / advice question is the correct answer, so it is not replaced
     # with an evidence summary.
@@ -1570,17 +1599,19 @@ async def run_chat(history_messages: list[dict], db: Optional[AsyncSession] = No
     ):
         answer = _deterministic_evidence_answer(tool_results, contract, query=latest_user)
         validation = validate_answer(answer, contract, evidence_pack, query=latest_user)
+        _trace_step(trace, "deterministic_replaces_refusal", answer, validation)
 
     if mode == "enforce" and not validation.passed:
         answer = _refusal_for_query(latest_user)
         validation = validate_answer(answer, contract, [], query=latest_user)
+        _trace_step(trace, "final_refusal", answer, validation)
 
     # Keep diagnostics aligned with the exact text emitted to the user.
     answer = _ensure_confirmed_anchor_warning(answer, session_context)
     validation = validate_answer(answer, contract, evidence_pack, query=latest_user)
     if not validation.passed and _looks_like_refusal(answer):
         validation = AnswerValidationResult(passed=True, hallucination_risk="low")
-    _record_validation(validation_sink, validation, mode=mode, rewrite_count=rewrite_count, route=route)
+    _record_validation(validation_sink, validation, mode=mode, rewrite_count=rewrite_count, route=route, trace=trace)
     if validation_sink is not None and session_context is not None and settings.session_summary_enabled:
         validation_sink["context"] = session_context.to_metadata()
     if settings.answer_validation_log_diagnostics and mode != "off":

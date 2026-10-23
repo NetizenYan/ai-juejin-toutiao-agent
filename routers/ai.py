@@ -64,6 +64,10 @@ def _build_done_payload(session_id: int, evidence: list, validation: dict) -> di
         done_payload["confirmedAnchor"] = validation["confirmed_anchor"]
     if validation.get("agent_orchestration"):
         done_payload["agentOrchestration"] = validation["agent_orchestration"]
+    # Diagnostics only (eval runs): the trace carries draft answers and violation names.
+    trace = validation.get("trace")
+    if settings.answer_validation_expose_internal_details and trace is not None:
+        done_payload["validationTrace"] = trace
     return done_payload
 
 

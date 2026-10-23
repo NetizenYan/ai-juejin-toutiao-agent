@@ -46,6 +46,19 @@ class AiRouterMetadataTests(unittest.TestCase):
         self.assertEqual(payload["confirmedAnchor"]["anchor_id"], "news:jjrb:anchor")
         self.assertEqual(payload["agentOrchestration"]["next_action"], "ask_user_to_confirm_anchor")
 
+    def test_validation_trace_is_exposed_only_when_internal_details_enabled(self):
+        from dataclasses import replace
+        from unittest import mock
+
+        validation = {"summary": {"passed": True}, "trace": [{"stage": "initial", "violations": ["max_chars_exceeded"]}]}
+
+        with mock.patch.object(ai_router, "settings", replace(ai_router.settings, answer_validation_expose_internal_details=False)):
+            self.assertNotIn("validationTrace", ai_router._build_done_payload(1, [], validation))
+            self.assertNotIn("trace", str(ai_router._build_assistant_evidence_pack([], validation)))
+        with mock.patch.object(ai_router, "settings", replace(ai_router.settings, answer_validation_expose_internal_details=True)):
+            payload = ai_router._build_done_payload(1, [], validation)
+        self.assertEqual(payload["validationTrace"][0]["violations"], ["max_chars_exceeded"])
+
 
 if __name__ == "__main__":
     unittest.main()
