@@ -33,6 +33,7 @@ from harness.rag_index import add_external_doc
 from harness.external_evidence import verify_external_evidence
 from harness.query_understanding import understand_user_query
 from harness.answer_contract import build_answer_contract, parse_enforce_routes, resolve_validation_mode, AnswerContract
+from harness.citation_repair import repair_citations
 from harness.answer_validator import AnswerValidationResult, asks_investment_certainty, is_refusal, validate_answer
 from harness.agent_orchestrator import build_agent_orchestration_plan
 from harness.anchor_resolver import (
@@ -1296,6 +1297,13 @@ def _rewrite_messages(
 TRACE_ANSWER_PREVIEW_CHARS = 300
 
 
+def _repair_answer_citations(answer: str, evidence_refs: list[str], trace: list[dict], stage: str) -> str:
+    repaired, repairs = repair_citations(answer, evidence_refs)
+    if repairs:
+        trace.append({"stage": f"citation_repair_{stage}", "repairs": repairs})
+    return repaired
+
+
 def _trace_step(trace: list[dict], stage: str, answer: str, validation: AnswerValidationResult) -> None:
     trace.append({
         "stage": stage,
@@ -1552,6 +1560,8 @@ async def run_chat(history_messages: list[dict], db: Optional[AsyncSession] = No
         trace=trace,
     )
     answer = _ensure_confirmed_anchor_warning(answer, session_context)
+    evidence_refs = [str(item.get("ref")) for item in evidence_pack if isinstance(item, dict) and item.get("ref")]
+    answer = _repair_answer_citations(answer, evidence_refs, trace, "initial")
 
     if mode == "off":
         async for token in _chunk_text(answer):
@@ -1574,6 +1584,7 @@ async def run_chat(history_messages: list[dict], db: Optional[AsyncSession] = No
                 answer = await client.complete(
                     _rewrite_messages(effective_history, tool_results, contract, answer, session_context=session_context)
                 )
+                answer = _repair_answer_citations(answer, evidence_refs, trace, f"rewrite_{rewrite_count}")
             except Exception as exc:  # noqa: BLE001
                 trace.append({"stage": "rewrite_error", "error": type(exc).__name__})
                 answer = _no_answer_response()
