@@ -208,6 +208,24 @@ class AnswerValidatorTests(unittest.TestCase):
 
         self.assertTrue(result.passed)
 
+    def test_stated_advice_fails_even_with_disclaimer(self):
+        result = validate_answer(
+            "以下不构成投资建议。建议买入相关龙头。[news:jjrb:8dcc9e6349959132]",
+            self._contract(),
+            self._evidence(),
+            query="新质生产力对半导体有什么影响？",
+        )
+
+        self.assertIn("investment_advice_or_certainty", result.constraint_violations)
+
+    def test_negated_or_quoted_terms_are_not_advice(self):
+        for answer in (
+            "并不必然带动股价，不一定利好，也不建议买入。[news:jjrb:8dcc9e6349959132]",
+            "站内未找到表明“一定利好半导体”的证据，不能据此判断。[news:jjrb:8dcc9e6349959132]",
+        ):
+            result = validate_answer(answer, self._contract(), self._evidence(), query="这些政策是不是一定利好半导体？")
+            self.assertTrue(result.passed, (answer, result.constraint_violations))
+
     def test_shadow_failed_result_records_would_rewrite_without_rewrite_count(self):
         result = validate_answer("最近报道主要关注新质生产力。", self._contract(), self._evidence())
 

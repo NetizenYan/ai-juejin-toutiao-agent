@@ -50,6 +50,20 @@ class AgentContractTests(unittest.TestCase):
         self.assertIn("不构成投资建议", answer)
         self.assertTrue(agent._looks_like_refusal(answer))
 
+    def test_rewrite_request_ends_on_user_turn_with_targeted_hints(self):
+        results = [{"items": [{"id": "jjrb:001", "title": "标题", "summary": "摘要"}]}]
+
+        messages = agent._rewrite_messages(
+            [{"role": "user", "content": "问题"}], results, agent.AnswerContract(), "草稿",
+            violations=["invalid_citation", "max_chars_exceeded"],
+        )
+
+        # An assistant-final message makes chat models continue the draft instead of rewriting.
+        self.assertEqual(messages[-1]["role"], "user")
+        self.assertIn("草稿", messages[-1]["content"])
+        self.assertIn("[news:jjrb:001]", messages[-1]["content"])
+        self.assertIn("字数", messages[-1]["content"])
+
     def test_fallback_routes_news_question_to_search_tool(self):
         calls = build_fallback_tool_calls("帮我找一下AI芯片相关资讯")
 

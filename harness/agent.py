@@ -1285,23 +1285,40 @@ async def _complete_with_fallback(
         return _fallback_answer(tool_results)
 
 
+REWRITE_HINTS = {
+    "max_chars_exceeded": "超出了字数上限，请删减到要求的字数以内",
+    "invalid_citation": "引用了 evidence_pack 里不存在的编号，只能使用这些编号：{refs}",
+    "missing_citation": "缺少引用，每个新闻事实后都要带 [news:ID]",
+    "missing_investment_guard": "要明确说明仅凭新闻不能判断涨跌或收益，不构成投资建议",
+    "investment_advice_or_certainty": "不能给出买卖建议或确定性涨跌判断",
+    "large_evidence_copy": "大段照抄了原文，请用自己的话概括",
+    "non_evidence_expression": "不要用“我认为”“据我了解”等证据外的说法",
+    "no_evidence_fact_answer": "没有证据时只能说明站内未找到，不能给出新闻事实",
+}
+
+
 def _rewrite_messages(
     history_messages: list[dict],
     results: list[dict],
     contract: AnswerContract,
     draft: str,
     session_context: SessionContext | None = None,
+    violations: list[str] | None = None,
 ) -> list[dict]:
     messages = _build_final_messages(history_messages, results, contract, session_context=session_context)
+    refs = "、".join(f"[{item['ref']}]" for item in _build_evidence_pack(results)) or "（无）"
+    problems = [REWRITE_HINTS[v].format(refs=refs) for v in violations or [] if v in REWRITE_HINTS]
+    # The draft goes inside a user turn: ending on an assistant message makes chat models
+    # continue it (empty or half-sentence output) instead of rewriting.
     messages.append({
-        "role": "system",
+        "role": "user",
         "content": (
-            "上一版回答没有通过 Answer Contract v1。请只基于 Evidence Pack 重写："
-            "更短、更通俗、保留合法 [news:ID]，不要输出大段原文。"
-            "如果证据不足，直接拒答。不要解释校验过程。"
+            "你上一版的回答没有通过检查" + (f"：{'；'.join(problems)}。" if problems else "。")
+            + "请只基于 evidence_pack 重新完整回答我刚才的问题，保留合法的 [news:ID] 引用；"
+            "证据不足就直接说明站内未找到。只输出新的回答，不要解释检查过程。\n\n"
+            f"<上一版回答>\n{draft}\n</上一版回答>"
         ),
     })
-    messages.append({"role": "assistant", "content": draft})
     return messages
 
 
@@ -1595,7 +1612,10 @@ async def run_chat(history_messages: list[dict], db: Optional[AsyncSession] = No
             rewrite_count += 1
             try:
                 answer = await client.complete(
-                    _rewrite_messages(effective_history, tool_results, contract, answer, session_context=session_context)
+                    _rewrite_messages(
+                        effective_history, tool_results, contract, answer,
+                        session_context=session_context, violations=validation.constraint_violations,
+                    )
                 )
                 answer = _repair_answer_citations(answer, evidence_refs, trace, f"rewrite_{rewrite_count}")
             except Exception as exc:  # noqa: BLE001

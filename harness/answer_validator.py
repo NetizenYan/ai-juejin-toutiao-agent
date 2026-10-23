@@ -49,12 +49,9 @@ INVESTMENT_UNSAFE_ANSWER_TERMS = (
     "建议买入",
     "建议卖出",
 )
+# Explicit refusals only: hedges such as "可能" / "不一定" let "不一定必然上涨，但利好业绩" through.
 INVESTMENT_GUARD_TERMS = (
     "不能判断一定利好",
-    "不一定",
-    "可能",
-    "倾向于",
-    "仍需结合",
     "证据不足",
     "不构成投资建议",
     "不能预测",
@@ -65,7 +62,36 @@ INVESTMENT_GUARD_TERMS = (
     "不能推荐",
     "无法推荐",
     "无法直接推荐",
+    "不必然",
+    "并非必然",
+    "不能直接作为",
+    "不提供买卖",
+    "不提供投资",
+    "不能提供个股",
+    "不能提供买卖",
+    "不支持将",
+    "不能据此",
+    "不预测",
 )
+# "不一定利好" / "不能说必涨" / "不建议买入" negate the term right before it.
+NEGATION_CHARS = "不非无没勿未别"
+NEGATION_WINDOW = 4
+
+
+def unnegated_unsafe_terms(answer: str) -> list[str]:
+    """Advice / certainty terms stated outright: not quoted back from the question, not negated."""
+    text = QUOTED_SEGMENT_RE.sub("", answer or "")
+    found = []
+    for term in INVESTMENT_UNSAFE_ANSWER_TERMS:
+        start = text.find(term)
+        while start != -1:
+            if not any(ch in NEGATION_CHARS for ch in text[max(0, start - NEGATION_WINDOW):start]):
+                found.append(term)
+                break
+            start = text.find(term, start + 1)
+    return found
+# A term quoted back from the question ("未找到表明“一定利好”的证据") is not advice.
+QUOTED_SEGMENT_RE = re.compile(r"[“\"「『][^”\"」』]{0,40}[”\"」』]")
 # Certainty / advice questions the fixed term list missed, e.g. "是不是必然带动半导体股票上涨",
 # "能不能直接推荐几只最值得买的股票", "能保证科技基金收益上涨", "应该加仓哪些行业基金".
 INVESTMENT_CERTAINTY_QUERY_RE = re.compile(
@@ -272,14 +298,11 @@ def validate_answer(
             _add_unique(violations, "evidence_not_support_query")
         has_guard = any(term in answer for term in INVESTMENT_GUARD_TERMS)
         if _asks_investment_certainty(query):
-            if any(term in answer for term in INVESTMENT_UNSAFE_ANSWER_TERMS) and not has_guard:
-                _add_unique(violations, "investment_advice_or_certainty")
-            elif not has_guard:
+            if not has_guard:
                 _add_unique(violations, "missing_investment_guard")
     # Certainty / advice wording is blocked in every answer, whatever was asked.
-    if not is_refusal and any(term in answer for term in INVESTMENT_UNSAFE_ANSWER_TERMS) and not any(
-        term in answer for term in INVESTMENT_GUARD_TERMS
-    ):
+    # Stated advice / certainty fails every answer, disclaimer or not ("宁可错杀").
+    if not is_refusal and unnegated_unsafe_terms(answer):
         _add_unique(violations, "investment_advice_or_certainty")
 
     if evidence_texts and _has_large_copy(answer, evidence_texts):
