@@ -123,7 +123,11 @@ const decorateCitations = (root) => {
 const formatMessage = (content) => {
   if (!content) return '';
   // 1) marked 解析 → 2) DOMPurify 净化 → 3) 仅在文本节点上包裹 citation
-  const clean = DOMPurify.sanitize(marked.parse(content));
+  // 回答里的图片/媒体一律不渲染：浏览器加载外链图片即会把 URL 里的对话内容发给第三方（提示注入外传）。
+  const clean = DOMPurify.sanitize(marked.parse(content), {
+    FORBID_TAGS: ['img', 'picture', 'source', 'video', 'audio', 'iframe', 'object', 'embed', 'form', 'input', 'style'],
+    FORBID_ATTR: ['style', 'srcset', 'background', 'poster'],
+  });
   const container = document.createElement('div');
   container.innerHTML = clean;
   decorateCitations(container);
