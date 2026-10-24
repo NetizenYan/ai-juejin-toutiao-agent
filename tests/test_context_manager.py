@@ -577,6 +577,16 @@ class ContextManagerTests(unittest.TestCase):
         self.assertIn("news:jjrb:af17afe835290422", context.last_evidence_ids)
         self.assertFalse(context.memory_is_evidence)
 
+    def test_follow_up_without_known_topic_falls_back_to_previous_turn(self):
+        history = [_msg("user", "农产品新版“身份证”是什么？"), _msg("assistant", "是承诺达标合格证。"),
+                   _msg("user", "它从哪天开始全面启用？")]
+        context = build_session_context(history)
+
+        expanded = build_contextual_retrieval_query("它从哪天开始全面启用？", context)
+
+        self.assertIn("农产品新版", expanded)
+        self.assertIn("全面启用", expanded)
+
     def test_plural_contextual_follow_up_uses_short_term_article_anchor(self):
         history = [
             _msg("user", "制造业六化转型再提速这篇报道讲了什么？"),

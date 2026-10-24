@@ -1034,9 +1034,21 @@ def build_contextual_retrieval_query(query: str, context: SessionContext | None)
             hints.append(topic)
 
     if not hints:
+        # No known topic, source or article pattern in the session ("农产品新版“身份证”是什么？" →
+        # "它从哪天开始全面启用？"): the previous user turn is the only thing "它" can point to.
+        previous = _previous_user_turn(context.recent_messages, query)
+        if previous:
+            return f"{previous} {clean_query}"
         return clean_query
     hint_prefix = " ".join(hints[:6])
     return f"{hint_prefix} {clean_query}"
+
+
+def _previous_user_turn(messages: list[dict[str, Any]], current: str) -> str:
+    users = [_message_content(m).strip() for m in messages if m.get("role") == "user" and _message_content(m).strip()]
+    if users and users[-1] == (current or "").strip():
+        users = users[:-1]
+    return clean_retrieval_query(users[-1]) if users else ""
 
 
 def render_session_context_section(context: SessionContext) -> str:
