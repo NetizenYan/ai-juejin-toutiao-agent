@@ -191,6 +191,11 @@ class AISettings:
     max_web_calls_per_session: int = _int("MAX_WEB_CALLS_PER_SESSION", 3)
     max_fetch_bytes: int = _int("MAX_FETCH_BYTES", 1024 * 1024)
     tool_timeout_seconds: int = _int("TOOL_TIMEOUT_SECONDS", 30)
+    # Evidence text per article given to the model and validator: the matched chunks, not just the opening
+    # 180 chars (figures deeper in the chunk were cut off and the model answered "未找到具体数字").
+    # Keep these small for local models with a 4096-token context.
+    evidence_snippet_chars: int = _int("EVIDENCE_SNIPPET_CHARS", 500)
+    evidence_chunks_per_doc: int = _int("EVIDENCE_CHUNKS_PER_DOC", 2)
     # Screenshot + CPU OCR (model load ~10s, a long page ~20s) does not fit the generic tool timeout.
     web_capture_timeout_seconds: int = _int("WEB_CAPTURE_TIMEOUT_SECONDS", 120)
     max_redirects: int = _int("MAX_REDIRECTS", 3)
