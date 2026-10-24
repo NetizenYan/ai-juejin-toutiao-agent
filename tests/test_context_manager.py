@@ -1,5 +1,7 @@
 import unittest
 
+from harness import agent
+
 from harness import context_manager as cm
 from harness.answer_contract import build_answer_contract
 from harness.context_manager import (
@@ -594,6 +596,30 @@ class ContextManagerTests(unittest.TestCase):
 
         self.assertTrue(contract.requires_evidence)
         self.assertTrue(contract.must_include_citations)
+
+    def test_constraint_from_a_turn_outside_the_window_survives_via_the_ledger(self):
+        previous = {"context": {"constraint_ledger": [
+            {"constraint_id": "constraint:1", "scope": "max_chars", "value": 100, "source_turn_index": 1},
+            {"constraint_id": "constraint:2", "scope": "must_include_citations", "value": True, "source_turn_index": 1},
+        ]}}
+        history = [{"role": "user", "content": "第98轮：随便聊一句。"}, {"role": "assistant", "content": "好的。"},
+                   {"role": "user", "content": "那它对人工智能产业有什么影响？"}]
+
+        context = build_session_context(history, previous_summary=previous)
+        understanding = agent._with_session_constraints(understand_user_query("那它对人工智能产业有什么影响？"), context)
+
+        self.assertEqual(context.active_constraints["max_chars"], 100)
+        self.assertEqual(understanding.max_chars, 100)
+        self.assertTrue(understanding.must_include_citations)
+
+    def test_constraint_in_the_current_message_wins_over_the_carried_one(self):
+        previous = {"context": {"constraint_ledger": [
+            {"constraint_id": "constraint:1", "scope": "max_chars", "value": 100, "source_turn_index": 1}]}}
+        context = build_session_context([{"role": "user", "content": "这次不超过200字说说算力网。"}], previous_summary=previous)
+
+        understanding = agent._with_session_constraints(understand_user_query("这次不超过200字说说算力网。"), context)
+
+        self.assertEqual(understanding.max_chars, 200)
 
 
 if __name__ == "__main__":

@@ -794,6 +794,12 @@ def build_session_context(
         _ledger_entries(previous_context, "constraint_ledger"),
         constraint_ledger,
     )
+    # The router only passes the last 20 messages, so "之后都不超过100字" said 90 turns ago survives only in the
+    # ledger carried by the previous summary; constraints in the current window override it.
+    active_constraints = {
+        **{entry["scope"]: entry["value"] for entry in constraint_ledger if entry.get("scope")},
+        **active_constraints,
+    }
     evidence_ledger = _merge_keyed_ledgers(
         _ledger_entries(previous_context, "evidence_ledger"),
         evidence_ledger,

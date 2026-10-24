@@ -182,6 +182,35 @@ class AgentContractTests(unittest.TestCase):
 
         self.assertEqual(result, [{"tool": "news_search", "items": [], "evidence_ids": []}])
 
+    def test_tool_timeout_is_reported_and_ocr_gets_its_own_budget(self):
+        import dataclasses
+        from unittest import mock
+
+        async def slow_call_tool(session, name, arguments):
+            await asyncio.sleep(1)
+
+        quick = dataclasses.replace(agent.settings, tool_timeout_seconds=0.01, web_capture_timeout_seconds=5)
+        with mock.patch.object(agent, "settings", quick), mock.patch.object(agent, "call_tool", slow_call_tool):
+            result = asyncio.run(agent._execute_calls(
+                "s", db=None, calls=[{"name": "news_search", "arguments": {}}], audit_message_id=None))
+            self.assertEqual(agent._tool_timeout_seconds("web_capture_ocr"), 5)
+
+        self.assertIn("超时", result[0]["error"])
+
+    def test_unverified_ocr_answer_gets_low_credibility_warning_and_web_ref(self):
+        ocr = {"tool": "web_capture_ocr", "url": "http://city.ce.cn/a.shtml",
+               "item": {"source": "ce.cn", "source_url": "http://city.ce.cn/a.shtml", "title": "企业业绩"}}
+
+        context = agent._render_tool_context([ocr])
+        answer = agent._ensure_external_ocr_warning("报道称公司前三季度业绩大增。", [ocr])
+
+        self.assertIn("[web:http://city.ce.cn/a.shtml]", context)
+        self.assertIn("不要编造新闻编号", context)
+        self.assertTrue(answer.startswith("注意：这条信息来自 ce.cn"))
+        self.assertIn("可信度较低", answer)
+        matched = {**ocr, "item": {**ocr["item"], "ocr_comparison": {"matched": True}}}
+        self.assertEqual(agent._ensure_external_ocr_warning("报道称业绩大增。", [matched]), "报道称业绩大增。")
+
     def test_station_intent_uses_deterministic_tools_before_model_choice(self):
         calls = agent._deterministic_tool_calls("给我推荐几篇文章", user_id=42)
 
