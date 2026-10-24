@@ -1015,6 +1015,9 @@ def _contract_prompt(contract: AnswerContract | None, query: str | None = None) 
         lines.append("- 新闻事实必须保留形如 [news:ID] 的引用。")
     if contract.evidence_only:
         lines.append("- 只能基于 Evidence Pack 中的标题、时间、摘要和片段回答。")
+        # The validator only checks that a figure appears somewhere in the evidence; both judges caught
+        # figures moved to the wrong subject (网球公开赛门票收入 8000 万 written under CBA 季后赛).
+        lines.append("- 每个数字、金额、比例和日期，都要写在证据里同一句话所说的对象上；不确定归属的数字宁可不写。")
     if contract.allow_background:
         lines.append("- 经济/政策概念最多允许一句通俗解释，但不能新增证据外新闻事实。")
     if asks_about_investment(query):

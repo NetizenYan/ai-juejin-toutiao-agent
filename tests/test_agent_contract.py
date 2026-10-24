@@ -204,6 +204,11 @@ class AgentContractTests(unittest.TestCase):
         self.assertIn("不要主动延伸到股市", contract_text)
         self.assertNotIn("注明不构成投资建议", contract_text)
 
+    def test_contract_prompt_ties_figures_to_their_subject(self):
+        contract_text = agent._contract_prompt(agent.AnswerContract(evidence_only=True), "体育赛事带动了多少消费？")
+
+        self.assertIn("同一句话所说的对象", contract_text)
+
     def test_unsupported_query_validation_forces_no_answer_even_in_shadow(self):
         validation = agent.AnswerValidationResult(
             passed=False,
