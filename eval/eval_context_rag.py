@@ -1073,6 +1073,7 @@ def compute_metrics(rows: list[dict[str, Any]], top_k: int = 5) -> dict[str, Any
     recall_hits: list[float] = []
     reciprocal_ranks: list[float] = []
     evidence_recalls: list[float] = []
+    capped_recalls: list[float] = []
     for row in answerable:
         retrieved = [normalize_ref(item) for item in row.get("retrieved_evidence_ids", [])[:top_k]]
         gold = [normalize_ref(item) for item in row.get("gold_evidence_ids", [])]
@@ -1082,6 +1083,8 @@ def compute_metrics(rows: list[dict[str, Any]], top_k: int = 5) -> dict[str, Any
         rank = _first_gold_rank(retrieved, gold)
         reciprocal_ranks.append(1.0 / rank if rank else 0.0)
         evidence_recalls.append(len(hits) / len(gold_set) if gold_set else 0.0)
+        # Normalized by min(|gold|, k): a case with 14 gold ids can reach 1.0 with five hits.
+        capped_recalls.append(len(hits) / min(len(gold_set), top_k) if gold_set else 0.0)
 
     citation_checks = [
         _citation_valid(row.get("citations") or [], row.get("done_evidence") or row.get("retrieved_evidence_ids") or [])
@@ -1181,6 +1184,7 @@ def compute_metrics(rows: list[dict[str, Any]], top_k: int = 5) -> dict[str, Any
         "Recall@5": avg(recall_hits),
         "MRR": avg(reciprocal_ranks),
         "EvidenceRecall@5": avg(evidence_recalls),
+        "EvidenceRecallCapped@5": avg(capped_recalls),
         "CitationValidRate": avg(citation_checks),
         "NoAnswerAccuracy": avg(no_answer_checks),
         "RefusalCorrectness": avg(refusal_checks),
@@ -1795,6 +1799,7 @@ def render_markdown_report(
         "Recall@5",
         "MRR",
         "EvidenceRecall@5",
+        "EvidenceRecallCapped@5",
         "CitationValidRate",
         "NoAnswerAccuracy",
         "RefusalCorrectness",
@@ -2316,6 +2321,7 @@ def render_sampled_full_e2e_report(
         "Recall@5",
         "MRR",
         "EvidenceRecall@5",
+        "EvidenceRecallCapped@5",
         "CitationValidRate",
         "NoAnswerAccuracy",
         "RefusalCorrectness",
