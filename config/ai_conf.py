@@ -104,6 +104,17 @@ class AISettings:
     llm_reasoning_effort: str = os.getenv("LLM_REASONING_EFFORT", "").strip()
     llm_thinking_enabled: bool = _bool("LLM_THINKING_ENABLED", False)
     llm_timeout_seconds: int = _int("LLM_TIMEOUT_SECONDS", 90)
+    # thinking switch format: "deepseek" -> extra_body {"thinking": {"type": "enabled"}};
+    # "enable_thinking" -> extra_body {"enable_thinking": true} (SiliconFlow and other hosts)
+    llm_thinking_style: str = os.getenv("LLM_THINKING_STYLE", "deepseek").strip().lower()
+    # Fallback model, used only when the primary reports exhausted balance/quota (HTTP 402 etc.).
+    llm_fallback_base_url: str = os.getenv("LLM_FALLBACK_BASE_URL", "").strip()
+    llm_fallback_api_key: str = os.getenv("LLM_FALLBACK_API_KEY", "").strip()
+    llm_fallback_model: str = os.getenv("LLM_FALLBACK_MODEL", "").strip()
+    llm_fallback_reasoning_effort: str = os.getenv("LLM_FALLBACK_REASONING_EFFORT", "").strip()
+    llm_fallback_thinking_enabled: bool = _bool("LLM_FALLBACK_THINKING_ENABLED", False)
+    llm_fallback_thinking_style: str = os.getenv("LLM_FALLBACK_THINKING_STYLE", "enable_thinking").strip().lower()
+    llm_fallback_cooldown_seconds: int = _int("LLM_FALLBACK_COOLDOWN_SECONDS", 600)
 
     # Embedding（Phase 4 RAG）
     embedding_base_url: str = os.getenv("EMBEDDING_BASE_URL", "http://localhost:11434/v1")
@@ -166,6 +177,7 @@ class AISettings:
     context_manager_enabled: bool = _bool("CONTEXT_MANAGER_ENABLED", True)
     session_summary_enabled: bool = _bool("SESSION_SUMMARY_ENABLED", True)
     long_term_memory_enabled: bool = _bool("LONG_TERM_MEMORY_ENABLED", False)
+    long_term_memory_max_entries: int = _int("LONG_TERM_MEMORY_MAX_ENTRIES", 12)
     context_recent_turns: int = _int("CONTEXT_RECENT_TURNS", 6)
     context_summary_message_threshold: int = _int("CONTEXT_SUMMARY_MESSAGE_THRESHOLD", 12)
     context_summary_char_threshold: int = _int("CONTEXT_SUMMARY_CHAR_THRESHOLD", 6000)
@@ -223,6 +235,15 @@ def get_llm_client():
     from openai import AsyncOpenAI
 
     return AsyncOpenAI(base_url=settings.llm_base_url, api_key=settings.llm_api_key or "not-needed")
+
+
+def get_llm_fallback_client():
+    """Fallback chat client, or None when no fallback is configured."""
+    if not (settings.llm_fallback_base_url and settings.llm_fallback_model and settings.llm_fallback_api_key):
+        return None
+    from openai import AsyncOpenAI
+
+    return AsyncOpenAI(base_url=settings.llm_fallback_base_url, api_key=settings.llm_fallback_api_key)
 
 
 def get_embedding_client():
