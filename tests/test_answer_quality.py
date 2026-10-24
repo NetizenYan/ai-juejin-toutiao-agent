@@ -63,6 +63,22 @@ class AnswerQualityTests(unittest.TestCase):
         self.assertEqual(result["usefulness_within_1"], 0.5)
         self.assertEqual([d["id"] for d in result["large_disagreements"]], ["y"])
 
+    def test_blind_pairs_hide_the_run_and_unblind_maps_choices_back(self):
+        def packet(case_id, answer):
+            return {"id": case_id, "turns": ["问"], "answer": answer, "cited": [{"ref": "news:1", "text": "证据"}]}
+        a = [packet("c1", "旧回答"), packet("c2", "一样")]
+        b = [packet("c1", "新回答"), packet("c2", "一样")]
+
+        pairs, key = aq.blind_pairs(a, b, ["c1", "c2"], seed=1)
+        again, _ = aq.blind_pairs(a, b, ["c1", "c2"], seed=1)
+
+        self.assertEqual(pairs, again)
+        self.assertEqual([p["id"] for p in pairs], ["c1"])
+        self.assertNotIn("旧回答", aq.pairwise_sheet(pairs).split("**回答")[0])
+        new_label = next(label for label, name in key["c1"].items() if name == "b")
+        result = aq.unblind([{"id": "c1", "choice": new_label}], key)
+        self.assertEqual((result["b"], result["a"], result["identical"]), (1, 0, 1))
+
 
 if __name__ == "__main__":
     unittest.main()

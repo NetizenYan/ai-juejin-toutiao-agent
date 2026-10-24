@@ -15,6 +15,13 @@ model), and summarizes them.
     python -m eval.answer_quality summarize --packets reports/aq_packets_R4.jsonl \
         --scores reports/aq_scores_R4.jsonl --report reports/aq_R4.md
 
+Blind pairwise comparison of two runs (same questions; the grader never sees which run is which):
+
+    python -m eval.answer_quality pairs --a reports/aq_packets_R11.jsonl --b reports/aq_packets_R12.jsonl \
+        --ids ids.json --sheet reports/pairwise_sheet.md --key reports/pairwise_key.json
+    # grader writes one line per pair: {"id": ..., "choice": "X" | "Y" | "tie", "why": "..."}
+    python -m eval.answer_quality unblind --choices choices.jsonl --key reports/pairwise_key.json
+
 Score schema (one JSON object per line):
     {"id": ..., "relevance": 0-2, "faithfulness": 0-2, "completeness": 0-2, "constraints": 0-2,
      "usefulness": 1-5, "flags": ["template", "unsupported_claim", "off_topic", "over_refusal"],
@@ -321,6 +328,75 @@ def human_sheet(packets: list[dict[str, Any]], sample_size: int, seed: int) -> s
     return "\n".join(lines) + "\n"
 
 
+PAIRWISE_RUBRIC = """两个系统回答了同一个问题，标签 X / Y 随机分配，与系统来源无关；哪个都可能更好，两个也可能一样好。
+依次按下面的标准判断，前一条决定不了才看后一条：
+1. 忠实：逐条核对回答里的事实、数字、名称、日期是否出自所给证据，且写在证据所说的对象上；编造或挂错对象的直接扣分。证据没说的，承认不知道的一方优于硬补的一方。
+2. 切题：是否回答了最后一轮问题，并遵守问题里的来源、时间、条数等限制。
+3. 有用：普通读者能否直接拿来用；该拒答时正确拒答算有用。
+长度和文采本身不是优点：更短但正确完整的回答胜过更长但有一处错误或多余发挥的回答。
+两者差别不影响使用时判 tie。"""
+PAIR_LABELS = ("X", "Y")
+
+
+def blind_pairs(packets_a: list[dict[str, Any]], packets_b: list[dict[str, Any]], ids: list[str],
+                seed: int = 20261024) -> tuple[list[dict[str, Any]], dict[str, dict[str, str]]]:
+    """Anonymous X/Y pairs (seeded per-case shuffle, stable across reruns) and the key that unblinds them.
+    Identical answers are not shown; unblind() counts them as ties."""
+    by_a = {p["id"]: p for p in packets_a}
+    by_b = {p["id"]: p for p in packets_b}
+    pairs, key = [], {}
+    for case_id in ids:
+        if case_id not in by_a or case_id not in by_b:
+            continue
+        a, b = by_a[case_id], by_b[case_id]
+        order = ["a", "b"]
+        random.Random(f"{seed}|{case_id}").shuffle(order)
+        key[case_id] = dict(zip(PAIR_LABELS, order))
+        if a["answer"].strip() == b["answer"].strip():
+            key[case_id]["identical"] = "true"
+            continue
+        side = {"a": a, "b": b}
+        cited = {item["ref"]: item for name in order for item in side[name]["cited"]}
+        pairs.append({
+            "id": case_id,
+            "turns": a["turns"],
+            "answers": {label: side[name]["answer"] for label, name in zip(PAIR_LABELS, order)},
+            "cited": list(cited.values()),
+        })
+    return pairs, key
+
+
+def pairwise_sheet(pairs: list[dict[str, Any]]) -> str:
+    lines = ["# 盲评表", "", PAIRWISE_RUBRIC, ""]
+    for pair in pairs:
+        lines += [f"## {pair['id']}", ""]
+        lines += [f"- 用户第{i + 1}轮：{turn}" for i, turn in enumerate(pair["turns"])]
+        for label, answer in pair["answers"].items():
+            lines += ["", f"**回答 {label}**", "", answer]
+        lines += ["", "**证据**", ""]
+        lines += [f"- [{c['ref']}] {c.get('date', '')}《{c.get('title', '')}》{c.get('text', '')}" for c in pair["cited"]]
+        lines.append("")
+    return "\n".join(lines)
+
+
+def unblind(choices: list[dict[str, Any]], key: dict[str, dict[str, str]]) -> dict[str, Any]:
+    """Map X/Y choices back to runs a/b; identical answers count as ties."""
+    result = {"a": 0, "b": 0, "tie": 0, "identical": 0, "unjudged": [], "cases": []}
+    chosen = {c["id"]: c for c in choices}
+    for case_id, mapping in key.items():
+        if mapping.get("identical"):
+            result["identical"] += 1
+            continue
+        choice = chosen.get(case_id)
+        if not choice or choice.get("choice") not in (*PAIR_LABELS, "tie"):
+            result["unjudged"].append(case_id)
+            continue
+        winner = "tie" if choice["choice"] == "tie" else mapping[choice["choice"]]
+        result[winner] += 1
+        result["cases"].append({"id": case_id, "winner": winner, "why": choice.get("why", "")})
+    return result
+
+
 def _read_jsonl(path: str | Path) -> list[dict[str, Any]]:
     with open(path, encoding="utf-8") as handle:
         return [json.loads(line) for line in handle if line.strip()]
@@ -366,6 +442,16 @@ def main() -> None:
     c = sub.add_parser("compare")
     c.add_argument("--a", required=True, nargs="+", help="score files of grader A")
     c.add_argument("--b", required=True, nargs="+", help="score files of grader B")
+    pr = sub.add_parser("pairs", help="blind X/Y sheet for two runs' packets")
+    pr.add_argument("--a", required=True)
+    pr.add_argument("--b", required=True)
+    pr.add_argument("--ids", required=True, help="JSON list of case ids")
+    pr.add_argument("--sheet", required=True)
+    pr.add_argument("--key", required=True, help="unblinding key; keep it away from the grader")
+    pr.add_argument("--seed", type=int, default=20261024)
+    u = sub.add_parser("unblind")
+    u.add_argument("--choices", required=True)
+    u.add_argument("--key", required=True)
     args = parser.parse_args()
 
     if args.command == "packets":
@@ -378,6 +464,15 @@ def main() -> None:
                                            concurrency=args.concurrency))
         _write_jsonl(args.out, scores)
         print(f"{len(scores)} scores -> {args.out}")
+    elif args.command == "pairs":
+        ids = json.loads(Path(args.ids).read_text(encoding="utf-8"))
+        pairs, key = blind_pairs(_read_jsonl(args.a), _read_jsonl(args.b), ids, args.seed)
+        Path(args.sheet).write_text(pairwise_sheet(pairs), encoding="utf-8")
+        Path(args.key).write_text(json.dumps(key, ensure_ascii=False, indent=2), encoding="utf-8")
+        print(f"{len(pairs)} pairs to judge, {len(key) - len(pairs)} identical -> {args.sheet}")
+    elif args.command == "unblind":
+        result = unblind(_read_jsonl(args.choices), json.loads(Path(args.key).read_text(encoding="utf-8")))
+        print(json.dumps(result, ensure_ascii=False, indent=2))
     elif args.command == "compare":
         result = agreement([r for p in args.a for r in _read_jsonl(p)], [r for p in args.b for r in _read_jsonl(p)])
         print(json.dumps(result, ensure_ascii=False, indent=2))
