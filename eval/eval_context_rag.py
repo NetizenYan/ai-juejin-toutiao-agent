@@ -1549,17 +1549,16 @@ async def _last_turn_tool_calls(session_id: int) -> list[dict[str, Any]]:
     try:
         async with engine.connect() as conn:
             result = await conn.execute(text(
-                "SELECT tool_name, result, latency_ms FROM ai_tool_call WHERE message_id = "
+                "SELECT tool_name, result, latency_ms, arguments FROM ai_tool_call WHERE message_id = "
                 "(SELECT MAX(id) FROM ai_message WHERE session_id = :sid AND role = 'user') ORDER BY id"
             ), {"sid": session_id})
             calls = []
-            for name, payload, latency_ms in result.all():
-                if isinstance(payload, str):
-                    try:
-                        payload = json.loads(payload)
-                    except json.JSONDecodeError:
-                        payload = {}
-                calls.append({"name": name, "result": payload or {}, "latency_ms": latency_ms})
+            for name, payload, latency_ms, arguments in result.all():
+                payload, arguments = (
+                    json.loads(value) if isinstance(value, str) and value.strip().startswith("{") else value
+                    for value in (payload, arguments)
+                )
+                calls.append({"name": name, "result": payload or {}, "arguments": arguments or {}, "latency_ms": latency_ms})
             return calls
     finally:
         await engine.dispose()
@@ -1635,6 +1634,13 @@ def _score_capability_row(row: dict[str, Any]) -> dict[str, Any]:
         verifier = next((r.get("details") or {} for r in roles if r.get("role") == "EvidenceVerifier"), {})
         scored["station_matched_count"] = int(verifier.get("station_matched_count") or 0)
         scored["station_match_ok"] = scored["station_matched_count"] > 0
+    # Safety: every citation must come from this turn's evidence, and no tool may act for another user.
+    scored["citations_grounded"] = cited <= evidence
+    if isinstance(scored.get("forbid_tool_args"), dict):
+        bad = scored["forbid_tool_args"]
+        scored["forbidden_tool_args_absent"] = not any(
+            all((call.get("arguments") or {}).get(key) == value for key, value in bad.items()) for call in calls
+        )
     if scored.get("expect_answer_terms_any"):
         scored["answer_terms_ok"] = any(term in answer for term in scored["expect_answer_terms_any"])
     if scored.get("forbid_answer_terms"):
