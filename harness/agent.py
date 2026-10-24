@@ -35,7 +35,7 @@ from harness.query_understanding import understand_user_query
 from harness.answer_contract import build_answer_contract, parse_enforce_routes, resolve_validation_mode, AnswerContract
 from harness.citation_repair import repair_citations
 from harness.date_window import explicit_date_window
-from harness.rag_search import SOURCE_VALUE_ALIASES
+from harness.rag_search import SOURCE_VALUE_ALIASES, keeps_recent_item
 from harness.rag_query_router import matched_source_terms
 from harness.answer_validator import (
     AnswerValidationResult,
@@ -495,7 +495,7 @@ def _anchor_retrieval_on_question(planned: list[dict], deterministic: list[dict]
 
 
 def _question_constraint(question: str):
-    """Date window and source the user asked for; planner keyword queries often drop both."""
+    """Date window, source and recency the user asked for; planner keyword queries often drop them."""
     window = explicit_date_window(question)
     terms = matched_source_terms(question)
     sources = set(SOURCE_VALUE_ALIASES.get(terms[0], (terms[0],))) if len(terms) == 1 else set()
@@ -507,7 +507,7 @@ def _question_constraint(question: str):
                 return False
         if sources and str(item.get("source") or "") not in sources:
             return False
-        return True
+        return keeps_recent_item(item, question)
 
     return allowed
 
@@ -515,7 +515,7 @@ def _question_constraint(question: str):
 def _merge_retrieval_results(tool_results: list[dict], question: str = "") -> None:
     """Pool the chunks of every retrieve_news call into the first one, so they are reranked once
     against the question and the evidence pack keeps RAG_TOP items instead of RAG_TOP per call.
-    Extra calls only add chunks that satisfy the question's own date window and source."""
+    Extra calls only add chunks that satisfy the question's own date window, source and recency."""
     retrievals = [r for r in tool_results if r.get("tool") == "retrieve_news" and not r.get("error")]
     if len(retrievals) < 2:
         return

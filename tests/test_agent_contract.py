@@ -3,6 +3,7 @@ import unittest
 
 from harness import agent
 from harness.intent import build_fallback_tool_calls, detect_intent
+from harness.rag_ranking import recency_reference_ts
 from harness.tool_registry import ToolPolicyError, validate_tool_arguments
 
 
@@ -105,6 +106,21 @@ class AgentContractTests(unittest.TestCase):
         agent._merge_retrieval_results(results, "只看人民日报，2026年5月关于算力网建设有什么报道？")
 
         self.assertEqual([item["id"] for item in results[0]["items"]], ["rmrb:a", "rmrb:b"])
+
+    def test_extra_retrieval_calls_keep_the_question_recency(self):
+        # 2024 transcripts once came back for "最近…" through a planner query that dropped "最近".
+        now = recency_reference_ts()
+        results = [
+            {"tool": "retrieve_news", "items": []},
+            {"tool": "retrieve_news", "items": [
+                {"id": "new", "chunk_text": "a", "publish_ts": int(now - 10 * 86400)},
+                {"id": "old", "chunk_text": "b", "publish_ts": int(now - 700 * 86400)},
+            ]},
+        ]
+
+        agent._merge_retrieval_results(results, "最近高质量发展有什么报道？")
+
+        self.assertEqual([item["id"] for item in results[0]["items"]], ["new"])
 
     def test_fallback_routes_news_question_to_search_tool(self):
         calls = build_fallback_tool_calls("帮我找一下AI芯片相关资讯")

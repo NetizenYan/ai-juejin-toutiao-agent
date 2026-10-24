@@ -241,6 +241,16 @@ def _title_overlaps_query(item: dict, query_compact: str) -> bool:
     return best >= 6
 
 
+def keeps_recent_item(item: dict, query: str, route: Any = None, now_ts: float | None = None) -> bool:
+    """False when a "最近/近期" query drops this item as stale; a long title overlap still keeps it."""
+    if not _has_recent_intent(query, route):
+        return True
+    return (
+        recency_score(item, now_ts=now_ts) >= _recent_recency_floor(query, route)
+        or _title_overlaps_query(item, _compact_query(query))
+    )
+
+
 def _filter_stale_recent_items(
     items: list[dict],
     query: str,
@@ -249,12 +259,7 @@ def _filter_stale_recent_items(
 ) -> tuple[list[dict], int]:
     if not items:
         return items, 0
-    floor = _recent_recency_floor(query, route)
-    query_compact = _compact_query(query)
-    filtered = [
-        item for item in items
-        if recency_score(item, now_ts=now_ts) >= floor or _title_overlaps_query(item, query_compact)
-    ]
+    filtered = [item for item in items if keeps_recent_item(item, query, route, now_ts)]
     return filtered, len(items) - len(filtered)
 
 
