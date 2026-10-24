@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import html
+import os
 from html.parser import HTMLParser
 import hashlib
 from dataclasses import dataclass
@@ -98,7 +99,7 @@ class PlaywrightScreenshotBackend:
         )
 
         async with async_playwright() as playwright:
-            browser = await playwright.chromium.launch(headless=True)
+            browser = await playwright.chromium.launch(headless=True, **browser_launch_env())
             try:
                 page = await browser.new_page(viewport=viewport)
 
@@ -176,6 +177,17 @@ class WebScreenshotProvider:
         day = captured_at[:10].replace("-", "") or "capture"
         digest = hashlib.sha256(f"{url}|{captured_at}".encode("utf-8")).hexdigest()[:24]
         return self.output_dir / day / f"{digest}.png"
+
+
+def browser_launch_env(library_path: str | None = None) -> dict[str, Any]:
+    """Launch kwargs that prepend WEB_CAPTURE_LIBRARY_PATH to LD_LIBRARY_PATH for the browser only.
+    The container already sets LD_LIBRARY_PATH (CUDA), so an env-file entry would not override it."""
+    extra = settings.web_capture_library_path if library_path is None else library_path
+    if not extra:
+        return {}
+    env = dict(os.environ)
+    env["LD_LIBRARY_PATH"] = os.pathsep.join(part for part in (extra, env.get("LD_LIBRARY_PATH", "")) if part)
+    return {"env": env}
 
 
 def _utc_now_iso() -> str:

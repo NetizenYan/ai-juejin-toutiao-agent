@@ -179,6 +179,8 @@ class AISettings:
     max_web_calls_per_session: int = _int("MAX_WEB_CALLS_PER_SESSION", 3)
     max_fetch_bytes: int = _int("MAX_FETCH_BYTES", 1024 * 1024)
     tool_timeout_seconds: int = _int("TOOL_TIMEOUT_SECONDS", 30)
+    # Screenshot + CPU OCR (model load ~10s, a long page ~20s) does not fit the generic tool timeout.
+    web_capture_timeout_seconds: int = _int("WEB_CAPTURE_TIMEOUT_SECONDS", 120)
     max_redirects: int = _int("MAX_REDIRECTS", 3)
     max_chunks_per_answer: int = _int("MAX_CHUNKS_PER_ANSWER", 8)
 
@@ -195,10 +197,14 @@ class AISettings:
     web_capture_viewport_width: int = _int("WEB_CAPTURE_VIEWPORT_WIDTH", 1280)
     web_capture_viewport_height: int = _int("WEB_CAPTURE_VIEWPORT_HEIGHT", 1600)
     web_capture_render_max_chars: int = _int("WEB_CAPTURE_RENDER_MAX_CHARS", 50000)
+    # Extra shared-library dir for the headless browser (e.g. NSS/ATK extracted without root); prepended to LD_LIBRARY_PATH.
+    web_capture_library_path: str = os.getenv("WEB_CAPTURE_LIBRARY_PATH", "").strip()
     ocr_provider_name: str = os.getenv("OCR_PROVIDER", "paddleocr")
     ocr_min_confidence: float = _float("OCR_MIN_CONFIDENCE", 0.35)
     ocr_clean_max_chars: int = _int("OCR_CLEAN_MAX_CHARS", 20000)
     ocr_min_clean_chars: int = _int("OCR_MIN_CLEAN_CHARS", 8)
+    # PaddlePaddle 3.x CPU inference with oneDNN fails on PP-OCRv6 ("ConvertPirAttribute2RuntimeAttribute not support").
+    ocr_enable_mkldnn: bool = _bool("OCR_ENABLE_MKLDNN", False)
 
     @property
     def web_allowed_domains_list(self) -> list[str]:

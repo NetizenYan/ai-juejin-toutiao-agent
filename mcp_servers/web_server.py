@@ -57,7 +57,8 @@ def _get_ocr_provider(provider_name: str | None = None):
     key = _ocr_provider_cache_key(provider_name)
     provider = _OCR_PROVIDER_CACHE.get(key)
     if provider is None:
-        provider = create_ocr_provider(key)
+        kwargs = {"enable_mkldnn": settings.ocr_enable_mkldnn} if key in {"paddle", "paddleocr", "paddle_ocr", "default"} else {}
+        provider = create_ocr_provider(key, **kwargs)
         _OCR_PROVIDER_CACHE[key] = provider
     return provider
 

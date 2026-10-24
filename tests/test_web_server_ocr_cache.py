@@ -15,9 +15,9 @@ class WebServerOcrProviderCacheTests(unittest.TestCase):
     def test_reuses_ocr_provider_for_same_provider_name(self):
         created = []
 
-        def fake_create_ocr_provider(name):
+        def fake_create_ocr_provider(name, **kwargs):
             provider = object()
-            created.append((name, provider))
+            created.append((name, provider, kwargs))
             return provider
 
         web_server.create_ocr_provider = fake_create_ocr_provider
@@ -28,11 +28,12 @@ class WebServerOcrProviderCacheTests(unittest.TestCase):
         self.assertIs(first, second)
         self.assertEqual(len(created), 1)
         self.assertEqual(created[0][0], "paddleocr")
+        self.assertEqual(created[0][2], {"enable_mkldnn": False})
 
     def test_uses_separate_cached_provider_for_different_provider_name(self):
         created = []
 
-        def fake_create_ocr_provider(name):
+        def fake_create_ocr_provider(name, **kwargs):
             provider = {"name": name}
             created.append(provider)
             return provider

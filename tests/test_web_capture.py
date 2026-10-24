@@ -4,7 +4,9 @@ import inspect
 import unittest
 
 from harness.safe_http_client import SafeHttpError
-from harness.web_capture import PlaywrightScreenshotBackend, WebScreenshotProvider, _html_snapshot
+from unittest import mock
+
+from harness.web_capture import PlaywrightScreenshotBackend, WebScreenshotProvider, _html_snapshot, browser_launch_env
 
 
 def public_resolver(_host, port, **_kwargs):
@@ -77,6 +79,12 @@ class WebCaptureTests(unittest.TestCase):
 
         self.assertIn("alpha beta g", snapshot)
         self.assertNotIn("delta", snapshot)
+
+    def test_browser_library_path_is_prepended_only_when_configured(self):
+        self.assertEqual(browser_launch_env(""), {})
+        with mock.patch.dict("os.environ", {"LD_LIBRARY_PATH": "/usr/local/cuda/lib64"}):
+            env = browser_launch_env("/opt/chromium-libs")["env"]
+        self.assertEqual(env["LD_LIBRARY_PATH"], "/opt/chromium-libs:/usr/local/cuda/lib64")
 
 
 if __name__ == "__main__":
