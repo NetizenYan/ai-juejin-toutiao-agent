@@ -41,12 +41,22 @@ def load_meta() -> dict | None:
         return json.load(f)
 
 
+def _canonical_model(name: str | None) -> str:
+    """Provider-neutral model name: Ollama "bge-m3" and SiliconFlow "Pro/BAAI/bge-m3" serve the same
+    weights (cosine 0.9999 on corpus chunks), so an index built with one is queryable with the other."""
+    value = (name or "").strip().lower()
+    for prefix in ("pro/", "baai/"):
+        if value.startswith(prefix):
+            value = value[len(prefix):]
+    return value
+
+
 def assert_meta_matches(model: str, dim: int) -> None:
     """启动/查询前校验：当前 embedding 配置必须与建索引时一致，否则向量空间不可比。"""
     meta = load_meta()
     if not meta:
         raise RuntimeError("RAG 未建索引（缺 config/rag_meta.json），请先运行 scripts.build_news_index")
-    if meta.get("embedding_model") != model or int(meta.get("vector_dim", 0)) != int(dim):
+    if _canonical_model(meta.get("embedding_model")) != _canonical_model(model) or int(meta.get("vector_dim", 0)) != int(dim):
         raise RuntimeError(
             f"RAG 配置不一致：collection 用 {meta.get('embedding_model')}/{meta.get('vector_dim')}，"
             f"当前 {model}/{dim}。请重建索引或改回原 embedding 模型。"
