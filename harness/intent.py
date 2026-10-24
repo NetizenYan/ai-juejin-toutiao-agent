@@ -115,6 +115,20 @@ def _clip_query(text: str, limit: int) -> str:
     return f"{value[:head]} {value[-tail:]}"
 
 
+# general_chat is recognised positively. Defaulting every question without a news keyword to
+# general_chat skipped retrieval for plain factual questions ("在莫斯科参加HSK考试的人有多少？",
+# "人形机器人运动会跳高金牌跳了多高？"): on a fresh test set 8 of 34 cases never searched.
+SMALL_TALK_RE = re.compile(
+    r"^(?:你好|您好|嗨|哈喽|hi|hello|早上好|下午好|晚上好|晚安|谢谢|多谢|感谢|再见|拜拜)"
+    r"|你是谁|介绍(?:一下)?你自己|你(?:能|会)(?:做|干)什么|你叫什么|你是什么模型"
+    r"|笑话|讲个故事|写(?:一?句|一?首|一?段)|鼓励|安慰|随便聊|聊聊天|天气不错"
+    r"|怎么翻译|翻译(?:一下|成)|怎么读|什么意思|^什么是\s*[a-z]"
+    r"|\d+\s*(?:加|减|乘以?|除以?|[+\-*/×÷])\s*\d+",
+    re.IGNORECASE,
+)
+QUESTION_RE = re.compile(r"[？?]|多少|几(?:个|家|位|次|年|月|天|名|项|件)|什么|哪|谁|怎么|怎样|如何|为什么|为何|是否|有没有|吗[。！]?$")
+
+
 def detect_intent(message: str) -> str:
     """Return the harness-owned intent label; models do not decide auth/routing."""
     normalized = (message or "").strip().lower()
@@ -133,6 +147,12 @@ def detect_intent(message: str) -> str:
     if _has_any_keyword(normalized, RECOMMEND_KEYWORDS):
         return "recommendation"
     if _has_any_keyword(normalized, NEWS_KEYWORDS) or _has_any_keyword(normalized, NEWS_TOPIC_KEYWORDS):
+        return "news_qa"
+    if SMALL_TALK_RE.search(normalized):
+        return "general_chat"
+    # A factual question in a news app is a news question; retrieval + validation refuse when the
+    # station has nothing on it, so routing an off-topic question here costs a refusal, not a hallucination.
+    if QUESTION_RE.search(normalized):
         return "news_qa"
     return "general_chat"
 

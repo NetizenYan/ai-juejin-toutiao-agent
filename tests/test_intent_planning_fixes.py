@@ -40,6 +40,14 @@ class IntentKeywordTests(unittest.TestCase):
         self.assertEqual(detect_intent("最近有什么AI新闻可以看？"), "news_qa")
         self.assertEqual(detect_intent("AI芯片怎么样"), "news_qa")
 
+    def test_plain_factual_questions_search_and_small_talk_does_not(self):
+        for question in ("在莫斯科参加中文水平考试（HSK）的人有多少？", "世界人形机器人运动会跳高金牌跳了多高？",
+                         "第30届聚变能国际大会在哪里开幕？谁出席并致辞？", "浙江义乌李祖村吸引了多少农创客？"):
+            self.assertEqual(detect_intent(question), "news_qa", question)
+        for chat in ("你是谁？", "讲个冷笑话", "1加1等于几？", "帮我写一句鼓励的话", "你好，我们先随便聊聊。",
+                     "第37轮：随便聊一句，今天天气不错。", "detail 怎么翻译"):
+            self.assertEqual(detect_intent(chat), "general_chat", chat)
+
     def test_explicit_news_id_routes_to_news_lookup(self):
         self.assertEqual(detect_intent("新闻 123 讲了什么"), "news_lookup")
         self.assertEqual(detect_intent("帮我看看文章#88"), "news_lookup")
