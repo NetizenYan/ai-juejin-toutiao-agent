@@ -142,6 +142,10 @@ def build_agent_orchestration_plan(
                 "anchor_ledger_count": len(getattr(session_context, "anchor_ledger", []) or []),
                 "topic_ledger_count": len(getattr(session_context, "topic_ledger", []) or []),
                 "memory_is_evidence": bool(getattr(session_context, "memory_is_evidence", False)),
+                "current_turn": getattr(session_context, "current_turn", None),
+                "turn_note_count": len(getattr(session_context, "turn_notes", []) or []),
+                "referenced_turn": (getattr(session_context, "referenced_turn", None) or {}).get("turn"),
+                "long_term_memory_used": bool(getattr(session_context, "long_term_memory_section", "")),
             },
         ),
         AgentRoleStep(

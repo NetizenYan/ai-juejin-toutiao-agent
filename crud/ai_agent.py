@@ -1,7 +1,7 @@
 """AI 会话存储的 CRUD（异步）。供 Gateway/Harness 持久化会话、消息、工具调用轨迹。"""
 from typing import Optional
 
-from sqlalchemy import select, delete, desc
+from sqlalchemy import select, delete, desc, func
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from models.ai_agent import AiSession, AiMessage, AiToolCall
@@ -55,6 +55,12 @@ async def get_recent_messages(db: AsyncSession, session_id: int, limit: int = 20
     rows = list(result.scalars().all())
     rows.reverse()
     return rows
+
+
+async def count_user_messages(db: AsyncSession, session_id: int) -> int:
+    """Number of user turns in the session (the context window holds only the last 20 messages)."""
+    stmt = select(func.count()).select_from(AiMessage).where(AiMessage.session_id == session_id, AiMessage.role == "user")
+    return int((await db.execute(stmt)).scalar_one())
 
 
 async def add_tool_call(db: AsyncSession, message_id: int, tool_name: str,

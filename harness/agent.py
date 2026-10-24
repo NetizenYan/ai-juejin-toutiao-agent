@@ -9,7 +9,6 @@ general_chat 意图不放行任何涉库/隐私工具。
 """
 from __future__ import annotations
 
-import dataclasses
 import time
 import re
 import asyncio
@@ -35,6 +34,7 @@ from harness.external_evidence import verify_external_evidence
 from harness.query_understanding import understand_user_query
 from harness.answer_contract import build_answer_contract, parse_enforce_routes, resolve_validation_mode, AnswerContract
 from harness.citation_repair import repair_citations
+from harness.long_term_memory import interest_retrieval_hint, preference_constraints, render_long_term_memory
 from harness.date_window import explicit_date_window
 from harness.rag_search import SOURCE_VALUE_ALIASES, keeps_recent_item
 from harness.rag_query_router import matched_source_terms
@@ -57,6 +57,8 @@ from harness.anchor_resolver import (
 from harness.context_manager import (
     SessionContext,
     apply_context_constraints,
+    resolve_turn_reference,
+    strip_turn_reference,
     build_contextual_retrieval_query,
     build_session_context,
     clean_retrieval_query,
@@ -176,9 +178,13 @@ _FORMAT_CONFIRMATION_BLOCKERS = (
 )
 
 
+# "回到最开始的话题，最近有什么新报道" asks for news about the remembered topic, not for the memory itself.
+_MEMORY_RECALL_NEWS_REQUEST_MARKERS = ("新报道", "有什么报道", "有什么新闻", "最新", "最近", "哪天", "日期", "发布", "怎么说", "讲了什么")
+
+
 def _is_memory_recall_query(query: str) -> bool:
     compact = re.sub(r"\s+", "", query or "")
-    if not compact:
+    if not compact or any(marker in compact for marker in _MEMORY_RECALL_NEWS_REQUEST_MARKERS):
         return False
     has_time_marker = any(marker in compact for marker in _MEMORY_RECALL_TIME_MARKERS)
     has_target_marker = any(marker in compact for marker in _MEMORY_RECALL_TARGET_MARKERS)
@@ -622,19 +628,6 @@ def _ensure_external_ocr_warning(answer: str, results: list[dict]) -> str:
         if not _answer_has_source_warning(answer, anchor):
             return f"{_source_credibility_warning(anchor)}\n\n{answer}"
     return answer
-
-
-CARRIED_CONSTRAINTS = ("style", "detail_level", "max_chars", "max_points", "must_include_citations")
-
-
-def _with_session_constraints(understanding, context: SessionContext | None):
-    """Constraints set earlier in the session apply unless this message sets its own."""
-    active = context.active_constraints if context is not None else {}
-    carried = {
-        key: active[key] for key in CARRIED_CONSTRAINTS
-        if active.get(key) is not None and getattr(understanding, key) is None
-    }
-    return dataclasses.replace(understanding, **carried) if carried else understanding
 
 
 def _render_tool_context(results: list[dict]) -> str:
@@ -1506,10 +1499,14 @@ async def run_chat(history_messages: list[dict], db: Optional[AsyncSession] = No
                    audit_message_id: Optional[int] = None,
                    user_id: Optional[int] = None,
                    evidence_sink: Optional[list] = None,
-                   validation_sink: Optional[dict] = None) -> AsyncIterator[str]:
+                   validation_sink: Optional[dict] = None,
+                   session_turn: Optional[int] = None,
+                   long_term_memory: Optional[list[dict]] = None) -> AsyncIterator[str]:
     """history_messages: [{'role': 'user'|'assistant'|'system', 'content': str}, ...]
 
     evidence_sink: 若传入 list，会被填入本轮工具命中的证据编号（如 news:132），供网关落库/返回。
+    session_turn: 本轮是会话里的第几轮（用户消息计数）；history 只含最近 20 条，靠它给记忆台账编绝对轮次。
+    long_term_memory: 该用户的长期记忆条目（偏好/关注领域），只作背景与默认约束，不作证据。
     """
     latest_user = _latest_user_message(history_messages)
     session_context: SessionContext | None = None
@@ -1525,6 +1522,7 @@ async def run_chat(history_messages: list[dict], db: Optional[AsyncSession] = No
             session_summary_enabled=settings.session_summary_enabled,
             previous_summary=_latest_context_metadata(history_messages),
             max_recent_evidence_ids=settings.context_max_recent_evidence_ids,
+            current_turn=session_turn,
         )
         effective_history = session_context.recent_messages
         retrieval_user = build_contextual_retrieval_query(latest_user, session_context)
@@ -1533,6 +1531,25 @@ async def run_chat(history_messages: list[dict], db: Optional[AsyncSession] = No
             and session_context.last_evidence_ids
         ):
             carryover_evidence_ids = session_context.last_evidence_ids[:settings.context_max_recent_evidence_ids]
+        referenced = resolve_turn_reference(latest_user, session_context)
+        if referenced:
+            # "第50轮那个产业" / "最开始那篇": retrieve with that turn's own words and re-fetch what it cited.
+            # Memory only points the way; the facts still come from this turn's evidence.
+            session_context.referenced_turn = referenced
+            retrieval_user = " ".join(part for part in (
+                strip_turn_reference(referenced["cue"]),
+                strip_turn_reference(clean_retrieval_query(latest_user)),
+            ) if part)
+            carryover_evidence_ids = list(referenced.get("evidence_refs") or [])[:settings.context_max_recent_evidence_ids]
+        if long_term_memory:
+            # Lowest priority: this message > this session > long-term preferences. Not evidence.
+            session_context.active_constraints = {
+                **preference_constraints(long_term_memory), **session_context.active_constraints,
+            }
+            session_context.long_term_memory_section = render_long_term_memory(long_term_memory)
+            hint = "" if referenced else interest_retrieval_hint(latest_user, long_term_memory)
+            if hint:
+                retrieval_user = f"{hint} {retrieval_user}"
         if validation_sink is not None and settings.session_summary_enabled:
             validation_sink["context"] = session_context.to_metadata()
 
@@ -1704,7 +1721,7 @@ async def run_chat(history_messages: list[dict], db: Optional[AsyncSession] = No
         return
 
     route = _route_from_tool_results(tool_results)
-    understanding = _with_session_constraints(understand_user_query(latest_user), session_context)
+    understanding = understand_user_query(latest_user)
     if session_context is not None:
         understanding = apply_context_constraints(understanding, session_context.active_constraints)
     contract = build_answer_contract(understanding, intent=intent, route=route)

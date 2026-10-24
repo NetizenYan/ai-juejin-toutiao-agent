@@ -4,6 +4,9 @@ POST /api/ai/chat            —— SSE 流式对话（鉴权）
 GET  /api/ai/sessions        —— 当前用户会话列表
 GET  /api/ai/sessions/{id}/messages —— 会话消息
 DELETE /api/ai/sessions      —— 清空当前用户会话
+GET  /api/ai/memory          —— 当前用户的长期记忆（偏好/关注领域）
+DELETE /api/ai/memory/{id}   —— 删除一条长期记忆
+DELETE /api/ai/memory        —— 清空长期记忆
 
 模型不直连 DB：会话/消息持久化由后端经 crud 完成；后续工具均走 MCP。
 """
@@ -16,8 +19,9 @@ from starlette import status
 
 from config.ai_conf import settings
 from config.db_conf import get_db, AsyncSessionLocal
-from crud import ai_agent
+from crud import ai_agent, ai_memory
 from harness.agent import run_chat
+from harness.long_term_memory import extract_memory_candidates
 from harness.evidence_detail_resolver import resolve_evidence_detail
 from harness.intent import detect_intent
 from models.users import User
@@ -86,8 +90,13 @@ async def chat(req: ChatRequest, user: User = Depends(get_current_user), db: Asy
     user_message = await ai_agent.add_message(db, session_id, "user", req.message)
     await ai_agent.update_session_intent(db, session_id, detect_intent(req.message))
     history = await ai_agent.get_recent_messages(db, session_id, limit=20)
+    session_turn = await ai_agent.count_user_messages(db, session_id)
     messages = [{"role": m.role, "content": m.content, "evidence": m.evidence}
                 for m in history if m.role in ("system", "user", "assistant") and m.content]
+    long_term = (
+        [ai_memory.to_dict(m) for m in await ai_memory.list_memories(db, user.id)]
+        if settings.long_term_memory_enabled else []
+    )
 
     # 3. 流式生成 + 结束后落库助手消息
     async def event_stream():
@@ -99,13 +108,22 @@ async def chat(req: ChatRequest, user: User = Depends(get_current_user), db: Asy
                 yield _sse({"event": "thinking", "message": "正在整理证据并生成答案..."})
             async for token in run_chat(messages, db=db, audit_message_id=user_message.id,
                                         user_id=user.id, evidence_sink=evidence,
-                                        validation_sink=validation):
+                                        validation_sink=validation, session_turn=session_turn,
+                                        long_term_memory=long_term):
                 parts.append(token)
                 yield _sse({"delta": token})
             answer = "".join(parts)
             evidence_pack = _build_assistant_evidence_pack(evidence, validation)
             async with AsyncSessionLocal() as s:
                 await ai_agent.add_message(s, session_id, "assistant", answer, evidence=evidence_pack)
+                if settings.long_term_memory_enabled:
+                    # Write gate: only explicit durable preferences/interests, with the user's words as evidence.
+                    await ai_memory.remember(
+                        s, user.id, extract_memory_candidates(req.message),
+                        evidence={"session_id": session_id, "turn": session_turn, "quote": req.message[:120]},
+                        max_entries=settings.long_term_memory_max_entries,
+                    )
+                    await ai_memory.touch(s, [m["id"] for m in long_term])
             done_payload = _build_done_payload(session_id, evidence, validation)
             yield _sse(done_payload)
             yield "data: [DONE]\n\n"
@@ -152,3 +170,22 @@ async def get_messages(session_id: int, user: User = Depends(get_current_user),
 async def clear_sessions(user: User = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
     count = await ai_agent.clear_sessions(db, user.id)
     return success_response(message=f"清空了{count}个会话")
+
+
+@router.get("/memory")
+async def list_memory(user: User = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
+    data = [ai_memory.to_dict(m) for m in await ai_memory.list_memories(db, user.id)]
+    return success_response(message="获取长期记忆成功", data=data)
+
+
+@router.delete("/memory/{memory_id}")
+async def delete_memory(memory_id: int, user: User = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
+    if not await ai_memory.delete_memory(db, user.id, memory_id):
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="记忆不存在")
+    return success_response(message="已删除这条长期记忆")
+
+
+@router.delete("/memory")
+async def clear_memory(user: User = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
+    count = await ai_memory.clear_memories(db, user.id)
+    return success_response(message=f"清空了{count}条长期记忆")

@@ -1,7 +1,5 @@
 import unittest
 
-from harness import agent
-
 from harness import context_manager as cm
 from harness.answer_contract import build_answer_contract
 from harness.context_manager import (
@@ -17,6 +15,14 @@ def _msg(role: str, content: str, evidence=None):
     if evidence is not None:
         message["evidence"] = evidence
     return message
+
+
+def _latest_context(history):
+    for message in reversed(history):
+        evidence = message.get("evidence")
+        if isinstance(evidence, dict) and isinstance(evidence.get("context"), dict):
+            return evidence["context"]
+    return None
 
 
 class ContextManagerTests(unittest.TestCase):
@@ -606,7 +612,7 @@ class ContextManagerTests(unittest.TestCase):
                    {"role": "user", "content": "那它对人工智能产业有什么影响？"}]
 
         context = build_session_context(history, previous_summary=previous)
-        understanding = agent._with_session_constraints(understand_user_query("那它对人工智能产业有什么影响？"), context)
+        understanding = cm.apply_context_constraints(understand_user_query("那它对人工智能产业有什么影响？"), context.active_constraints)
 
         self.assertEqual(context.active_constraints["max_chars"], 100)
         self.assertEqual(understanding.max_chars, 100)
@@ -617,9 +623,45 @@ class ContextManagerTests(unittest.TestCase):
             {"constraint_id": "constraint:1", "scope": "max_chars", "value": 100, "source_turn_index": 1}]}}
         context = build_session_context([{"role": "user", "content": "这次不超过200字说说算力网。"}], previous_summary=previous)
 
-        understanding = agent._with_session_constraints(understand_user_query("这次不超过200字说说算力网。"), context)
+        understanding = cm.apply_context_constraints(understand_user_query("这次不超过200字说说算力网。"), context.active_constraints)
 
         self.assertEqual(understanding.max_chars, 200)
+
+    def test_hundred_turn_session_keeps_turn_1_and_turn_50_reachable(self):
+        """Replays the router: each turn sees only the last 20 messages plus the previous context metadata."""
+        def reply_for(turn, text):
+            if turn == 1:
+                return "这篇讲新就业群体服务管理。[news:jjrb:4c88a7c38c557e7a]"
+            if turn == 50:
+                return "织里童装从代工转向品牌。[news:jjrb:110f4b5591ac05ed]"
+            return "好的。"
+
+        messages, context = [], None
+        for turn in range(1, 100):
+            text = {1: "织密新就业群体保障网这篇报道讲了什么？", 2: "之后的回答都不超过100字。",
+                    50: "第50轮：我想了解童装产业怎么提升品牌力。"}.get(turn, f"第{turn}轮：随便聊一句，今天天气不错。")
+            messages.append({"role": "user", "content": text})
+            history = messages[-20:]
+            context = build_session_context(history, previous_summary=_latest_context(history), current_turn=turn)
+            messages.append({"role": "assistant", "content": reply_for(turn, text), "evidence": {"context": context.to_metadata()}})
+
+        def at_turn_100(question):
+            messages.append({"role": "user", "content": question})
+            history = messages[-20:]
+            ctx = build_session_context(history, previous_summary=_latest_context(history), current_turn=100)
+            messages.pop()
+            return ctx
+
+        ctx = at_turn_100("第50轮我问的那个产业，经济日报最近怎么说？")
+        mid = cm.resolve_turn_reference("第50轮我问的那个产业，经济日报最近怎么说？", ctx)
+        first = cm.resolve_turn_reference("最开始问的那篇报道是哪天发的？", ctx)
+
+        self.assertEqual((mid["turn"], mid["evidence_refs"]), (50, ["news:jjrb:110f4b5591ac05ed"]))
+        self.assertIn("童装", mid["cue"])
+        self.assertEqual((first["turn"], first["evidence_refs"]), (1, ["news:jjrb:4c88a7c38c557e7a"]))
+        self.assertEqual(ctx.active_constraints.get("max_chars"), 100)
+        self.assertLessEqual(len(ctx.turn_notes), cm.TURN_NOTE_LIMIT + cm.TURN_NOTE_CHAT_LIMIT)
+        self.assertEqual(cm.strip_turn_reference(mid["cue"]), "我想了解童装产业怎么提升品牌力。")
 
 
 if __name__ == "__main__":

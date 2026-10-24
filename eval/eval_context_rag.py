@@ -1131,6 +1131,7 @@ def compute_metrics(rows: list[dict[str, Any]], top_k: int = 5) -> dict[str, Any
         for row in long_context_rows
         if "anchor_recall_at_100" in row["long_context"]
     ]
+    long_term_checks = [1.0 if row["long_term"].get("passed") else 0.0 for row in rows if isinstance(row.get("long_term"), dict)]
     memory_source_checks = [
         1.0 if row.get("memory_source_separated") else 0.0
         for row in rows
@@ -1191,6 +1192,7 @@ def compute_metrics(rows: list[dict[str, Any]], top_k: int = 5) -> dict[str, Any
         "LongContextTopicRecall@100": avg(topic100_checks),
         "LongContextAnchorRecall@100": avg(anchor100_checks),
         "MemorySourceSeparationRate": avg(memory_source_checks),
+        "LongTermMemoryPassRate": avg(long_term_checks),
         "SourceLabelAccuracy": avg(source_label_checks),
         "LowCredibilityWarningRate": avg(low_warning_checks),
         "ExternalFallbackTriggerAccuracy": avg(external_fallback_checks),
@@ -1454,6 +1456,21 @@ def _post_json(host: str, port: int, path: str, payload: dict[str, Any], token: 
     return response.status, dict(response.getheaders()), data
 
 
+def _request_json(host: str, port: int, method: str, path: str, token: str) -> tuple[int, Any]:
+    """Best-effort side request (memory reset/snapshot); a missing endpoint or server must not fail the eval."""
+    try:
+        conn = http.client.HTTPConnection(host, port, timeout=60)
+        conn.request(method, path, headers={"Authorization": token})
+        response = conn.getresponse()
+    except OSError as exc:
+        return 0, {"error": str(exc)}
+    raw = response.read().decode("utf-8", errors="replace")
+    try:
+        return response.status, json.loads(raw)
+    except json.JSONDecodeError:
+        return response.status, {"raw": raw}
+
+
 def _ensure_auth(host: str, port: int) -> ApiAuth:
     username = "context_rag_eval_" + datetime.now().strftime("%Y%m%d_%H%M%S")
     password = "ContextEval123"
@@ -1591,6 +1608,28 @@ def _score_capability_row(row: dict[str, Any]) -> dict[str, Any]:
             term in answer for term in lc.get("unless_terms") or []
         )
         scored["memory_source_separated"] = cited <= evidence and not repeats_memory
+    long_term = scored.get("long_term")
+    if isinstance(long_term, dict):
+        lt = dict(long_term)
+        entries = scored.get("long_term_memory_entries") or []
+        stored = json.dumps(entries, ensure_ascii=False)
+        checks = []
+        if lt.get("max_chars"):
+            lt["body_chars"] = _answer_body_chars(answer)
+            checks.append(lt["body_chars"] <= int(lt["max_chars"]))
+        if lt.get("expect_topic_terms"):
+            checks.append(any(term in answer for term in lt["expect_topic_terms"]))
+        if lt.get("absent_answer_terms"):
+            checks.append(not any(term in answer for term in lt["absent_answer_terms"]))
+        if lt.get("memory_must_include"):
+            checks.append(all(term in stored for term in lt["memory_must_include"]))
+        if lt.get("memory_must_exclude"):
+            checks.append(not any(term in stored for term in lt["memory_must_exclude"]))
+        if lt.get("forbid_terms"):
+            checks.append(not any(term in answer for term in lt["forbid_terms"])
+                          or any(term in answer for term in lt.get("unless_terms") or []))
+        lt["passed"] = bool(checks) and all(checks)
+        scored["long_term"] = lt
     if scored.get("expect_station_match"):
         roles = ((scored.get("done") or {}).get("agentOrchestration") or {}).get("roles") or []
         verifier = next((r.get("details") or {} for r in roles if r.get("role") == "EvidenceVerifier"), {})
@@ -1617,7 +1656,15 @@ def evaluate_full_e2e(
         last_chat: dict[str, Any] | None = None
         error_text: str | None = None
         start = time.perf_counter()
-        for turn in _case_turns(case):
+        # All cases share one eval user: clear long-term memory so one case's preferences cannot leak into the next.
+        _request_json(host, port, "DELETE", "/api/ai/memory", auth.token)
+        turns = _case_turns(case)
+        for turn_index, turn in enumerate(turns):
+            is_last = turn_index == len(turns) - 1
+            if is_last and case.get("clear_memory_before_last_turn"):
+                _request_json(host, port, "DELETE", "/api/ai/memory", auth.token)
+            if is_last and case.get("new_session_for_last_turn"):
+                session_id = None
             try:
                 last_chat = _chat_sse(host, port, auth.token, turn, session_id, timeout_seconds=sse_timeout)
             except Exception as exc:  # noqa: BLE001 - eval rows should preserve failures and continue.
@@ -1661,7 +1708,10 @@ def evaluate_full_e2e(
                     final["tool_calls"] = pool.submit(asyncio.run, _last_turn_tool_calls(int(session_id))).result()
             except Exception as exc:  # noqa: BLE001 - a DB hiccup should not drop the row
                 final["tool_calls_error"] = str(exc)
-            final["turn_count"] = len(_case_turns(case))
+            final["turn_count"] = len(turns)
+            if isinstance(case.get("long_term"), dict):
+                _status, memory = _request_json(host, port, "GET", "/api/ai/memory", auth.token)
+                final["long_term_memory_entries"] = (memory or {}).get("data") or []
             final = _score_capability_row(final)
         rows.append(_enrich_b_v3_eval_row(final))
     return rows
@@ -1755,6 +1805,7 @@ def render_markdown_report(
         "LongContextTopicRecall@100",
         "LongContextAnchorRecall@100",
         "MemorySourceSeparationRate",
+        "LongTermMemoryPassRate",
         "InsufficientEvidenceCorrectness",
         "LatencyP50",
         "LatencyP95",
@@ -2275,6 +2326,7 @@ def render_sampled_full_e2e_report(
         "LongContextTopicRecall@100",
         "LongContextAnchorRecall@100",
         "MemorySourceSeparationRate",
+        "LongTermMemoryPassRate",
         "InsufficientEvidenceCorrectness",
         "timeout_rate",
         "sse_done_received",

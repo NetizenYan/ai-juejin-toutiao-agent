@@ -137,6 +137,12 @@ class SessionContext:
     user_preferences: dict[str, Any] = field(default_factory=dict)
     compression_triggered: bool = False
     memory_is_evidence: bool = False
+    # Turn notes: one cue per user turn with the absolute turn number and the refs its reply cited
+    # (an index the agent consults when the user points back, cf. Harness2's library INDEX + cue).
+    turn_notes: list[dict[str, Any]] = field(default_factory=list)
+    current_turn: int | None = None
+    referenced_turn: dict[str, Any] | None = None
+    long_term_memory_section: str = ""
 
     def to_metadata(self) -> dict[str, Any]:
         return {
@@ -155,6 +161,8 @@ class SessionContext:
             "ledger_state": self.ledger_state,
             "user_preferences": self.user_preferences,
             "compression_triggered": self.compression_triggered,
+            "turn_notes": self.turn_notes,
+            "current_turn": self.current_turn,
         }
 
 
@@ -218,7 +226,7 @@ def _extract_max_points(text: str) -> int | None:
     return None
 
 
-def _constraints_from_text(text: str) -> dict[str, Any]:
+def constraints_from_text(text: str) -> dict[str, Any]:
     constraints: dict[str, Any] = {}
     if any(token in text for token in ("简单点", "简单说", "简短", "简洁", "通俗点", "通俗一点", "别太长")):
         constraints["style"] = "plain_language"
@@ -249,7 +257,7 @@ def extract_active_constraints(messages: list[dict[str, Any]]) -> dict[str, Any]
     for message in messages:
         if message.get("role") != "user":
             continue
-        constraints.update(_constraints_from_text(_message_content(message)))
+        constraints.update(constraints_from_text(_message_content(message)))
     return constraints
 
 
@@ -362,7 +370,7 @@ def _build_constraint_ledger(messages: list[dict[str, Any]]) -> list[dict[str, A
     for index, message in enumerate(messages):
         if message.get("role") != "user":
             continue
-        constraints = _constraints_from_text(_message_content(message))
+        constraints = constraints_from_text(_message_content(message))
         for key, value in constraints.items():
             ledger.append({
                 "constraint_id": f"constraint:{len(ledger) + 1}",
@@ -744,6 +752,88 @@ def _build_ledger_state(
     }
 
 
+TURN_NOTE_LIMIT = 40          # substantive turns kept (the earliest few are never evicted)
+TURN_NOTE_KEEP_EARLIEST = 3
+TURN_NOTE_CHAT_LIMIT = 5      # small-talk turns kept; they are evicted first
+_TURN_REF_RE = re.compile(r"第\s*([0-9]{1,4})\s*轮")
+_EARLIEST_TURN_MARKERS = ("最开始", "一开始", "最初", "起初", "开头", "第一轮", "第一个问题")
+
+
+def _user_turn_numbers(messages: list[dict[str, Any]], current_turn: int | None) -> list[int]:
+    """Absolute turn of each message. The window holds only the last messages, so the router's count of
+    user messages in the session anchors the numbering; without it fall back to window positions."""
+    if current_turn is None:
+        return [_turn_index_for_message(index) for index in range(len(messages))]
+    user_total = sum(1 for message in messages if message.get("role") == "user")
+    turns, seen = [], 0
+    for message in messages:
+        if message.get("role") == "user":
+            seen += 1
+        turns.append(current_turn - user_total + seen)
+    return turns
+
+
+def _build_turn_notes(history_messages: list[dict[str, Any]], current_turn: int | None) -> list[dict[str, Any]]:
+    from harness.intent import detect_intent  # local import: intent rules do not depend on this module
+
+    turns = _user_turn_numbers(history_messages, current_turn)
+    notes: list[dict[str, Any]] = []
+    for index, message in enumerate(history_messages):
+        if message.get("role") != "user":
+            continue
+        text = _message_content(message).strip()
+        if not text:
+            continue
+        refs: list[str] = []
+        for later in history_messages[index + 1:]:
+            if later.get("role") == "user":
+                break
+            if later.get("role") == "assistant":
+                refs.extend(_NEWS_REF_RE.findall(_message_content(later)))
+        refs = list(dict.fromkeys(refs))[:5]
+        notes.append({
+            "turn": turns[index],
+            "cue": _truncate(text, 60),
+            "substantive": bool(refs) or detect_intent(text) != "general_chat",
+            "evidence_refs": refs,
+        })
+    return notes
+
+
+def _merge_turn_notes(previous: list[dict[str, Any]], current: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Budgeted like an always-on memory: adding a note evicts small talk first, then the oldest
+    substantive notes except the first few (which answer "最开始…")."""
+    by_turn: dict[int, dict[str, Any]] = {}
+    for note in [*previous, *current]:
+        if isinstance(note, dict) and isinstance(note.get("turn"), int):
+            by_turn[note["turn"]] = dict(note)
+    ordered = [by_turn[turn] for turn in sorted(by_turn)]
+    substantive = [note for note in ordered if note.get("substantive")]
+    chat = [note for note in ordered if not note.get("substantive")][-TURN_NOTE_CHAT_LIMIT:]
+    if len(substantive) > TURN_NOTE_LIMIT:
+        keep = TURN_NOTE_LIMIT - TURN_NOTE_KEEP_EARLIEST
+        substantive = substantive[:TURN_NOTE_KEEP_EARLIEST] + substantive[-keep:]
+    return sorted([*substantive, *chat], key=lambda note: note["turn"])
+
+
+def resolve_turn_reference(query: str, context: SessionContext | None) -> dict[str, Any] | None:
+    """The earlier turn a message points back to ("第50轮…", "最开始那篇…"), or None."""
+    if context is None or not context.turn_notes:
+        return None
+    earlier = [note for note in context.turn_notes if note.get("turn") != context.current_turn]
+    match = _TURN_REF_RE.search(query or "")
+    if match:
+        wanted = int(match.group(1))
+        return next((note for note in earlier if note.get("turn") == wanted), None)
+    if any(marker in (query or "") for marker in _EARLIEST_TURN_MARKERS):
+        return next((note for note in earlier if note.get("substantive")), None)
+    return None
+
+
+def strip_turn_reference(text: str) -> str:
+    return re.sub(r"^[：:，,\s]+", "", _TURN_REF_RE.sub("", text or "")).strip()
+
+
 def build_session_context(
     history_messages: list[dict[str, Any]],
     *,
@@ -757,6 +847,7 @@ def build_session_context(
     context_budget_chars: int | None = None,
     long_context_max_chars: int = 1800,
     long_context_message_char_limit: int = 160,
+    current_turn: int | None = None,
 ) -> SessionContext:
     messages = _sanitize_messages(history_messages)
     recent_limit = max(1, recent_turns) * 2
@@ -804,6 +895,10 @@ def build_session_context(
         _ledger_entries(previous_context, "evidence_ledger"),
         evidence_ledger,
         key_field="evidence_ref",
+    )
+    turn_notes = _merge_turn_notes(
+        _ledger_entries(previous_context, "turn_notes"),
+        _build_turn_notes(history_messages, current_turn),
     )
     ledger_state = _build_ledger_state(
         previous_context,
@@ -854,6 +949,8 @@ def build_session_context(
         ledger_state=ledger_state,
         user_preferences=user_preferences,
         compression_triggered=compression_triggered,
+        turn_notes=turn_notes,
+        current_turn=current_turn,
         memory_is_evidence=False,
     )
 
@@ -955,6 +1052,7 @@ def render_session_context_section(context: SessionContext) -> str:
         "constraint_ledger": context.constraint_ledger,
         "evidence_ledger": context.evidence_ledger,
         "ledger_state": context.ledger_state,
+        "turn_notes": [note for note in context.turn_notes if note.get("substantive")],
         "memory_policy": (
             "会话摘要和最近 evidence id 仅用于理解指代、用户偏好和回答约束；"
             "不可作为新闻事实来源。新闻事实只能来自本轮 evidence_pack。"
@@ -964,9 +1062,19 @@ def render_session_context_section(context: SessionContext) -> str:
         {"role": message["role"], "content": _truncate(message["content"], 500)}
         for message in context.recent_messages
     ]
+    referenced = context.referenced_turn
+    reference_line = (
+        f"用户这句话指的是第{referenced['turn']}轮：「{referenced['cue']}」"
+        + (f"（当时的回答引用了 {'、'.join(referenced['evidence_refs'])}）" if referenced.get("evidence_refs") else "")
+        + "。按这一轮理解指代；事实仍只能来自本轮 evidence_pack。\n"
+        if referenced
+        else ""
+    )
     return (
-        '<session_context use_as_evidence="false">\n'
-        "这里是会话摘要和短期记忆，只用于理解上下文、指代和用户约束，"
+        (f"{context.long_term_memory_section}\n\n" if context.long_term_memory_section else "")
+        + '<session_context use_as_evidence="false">\n'
+        + reference_line
+        + "这里是会话摘要和短期记忆，只用于理解上下文、指代和用户约束，"
         "不可作为新闻事实来源。\n"
         f"{json.dumps(payload, ensure_ascii=False, indent=2)}\n"
         "</session_context>\n\n"
