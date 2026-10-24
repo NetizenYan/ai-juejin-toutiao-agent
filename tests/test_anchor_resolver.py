@@ -267,6 +267,21 @@ class AnchorResolverTests(unittest.TestCase):
         self.assertIn("可信度提示", text)
         self.assertIn("尚未被站内或主流来源交叉验证", text)
 
+    def test_unconfirmed_low_credibility_source_is_named_with_a_warning(self):
+        from harness.anchor_resolver import AnchorResolution, render_anchor_confirmation
+
+        for query, source in (
+            ("我记得X上有一条关于新质生产力影响海外市场的消息，你可以基于它分析吗？", "X（推特）"),
+            ("我有一张外网页面截图，好像是关于新质生产力的新闻。", "站外网页截图（OCR）"),
+        ):
+            text = render_anchor_confirmation(AnchorResolution("INSUFFICIENT_EVIDENCE", query, [], [], False))
+            self.assertTrue(text.startswith(f"注意：这条信息来自 {source}"), text)
+            self.assertIn("可信度较低", text)
+            self.assertIn("不作为确定事实", text)
+
+        plain = render_anchor_confirmation(AnchorResolution("INSUFFICIENT_EVIDENCE", "我记得经济日报有篇报道", [], [], False))
+        self.assertTrue(plain.startswith("我还不能在站内确认"))
+
 
 if __name__ == "__main__":
     unittest.main()

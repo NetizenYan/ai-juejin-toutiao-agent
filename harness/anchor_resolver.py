@@ -287,10 +287,38 @@ def resolve_anchor_candidates(
     )
 
 
+# Low-credibility origins a user may cite for a remembered story; checked in order, first match names it.
+_LOW_CREDIBILITY_MENTIONS = (
+    (re.compile(r"(?<![A-Za-z])X(?![A-Za-z])|推特|Twitter", re.IGNORECASE), "X（推特）"),
+    (re.compile(r"Instagram|(?<![A-Za-z])Ins(?![A-Za-z])", re.IGNORECASE), "Instagram"),
+    (re.compile(r"微博|抖音|小红书|朋友圈|微信群|网传|自媒体"), "社交媒体"),
+    (re.compile("|".join(OCR_QUERY_MARKERS)), "站外网页截图（OCR）"),
+)
+
+
+def low_credibility_source_in_query(query: str) -> str:
+    """Display name of a low-credibility origin the user mentions ("X上的一条消息", "外网页面截图"), or ""."""
+    for pattern, name in _LOW_CREDIBILITY_MENTIONS:
+        if pattern.search(query or ""):
+            return name
+    return ""
+
+
+def low_credibility_warning(source: str) -> str:
+    return (
+        f"注意：这条信息来自 {source}，尚未被站内或主流来源交叉验证，"
+        "可信度较低；以下只能作为线索分析，不作为确定事实。"
+    )
+
+
 def render_anchor_confirmation(resolution: AnchorResolution) -> str:
     if not resolution.candidates:
+        # Naming the source and its credibility is owed even when nothing can be confirmed:
+        # "X上有一条消息，能基于它分析吗" must not read as a neutral "站内找不到".
+        source = low_credibility_source_in_query(resolution.query)
         return (
-            "我还不能在站内确认你说的是哪篇新闻。"
+            (f"{low_credibility_warning(source)}\n\n" if source else "")
+            + "我还不能在站内确认你说的是哪篇新闻。"
             "目前没有中高置信度的站内候选；下一步需要进入站外工具/skills 查证，"
             "或请你补充更具体的发布时间、来源、标题片段或主题关键词。"
             "在确认前我不会把低置信线索当作事实来分析。"

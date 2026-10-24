@@ -51,6 +51,7 @@ from harness.anchor_resolver import (
     confirmed_anchor_from_user_selection,
     extract_anchor_candidates_from_confirmation,
     looks_like_anchor_query,
+    low_credibility_warning,
     render_anchor_confirmation,
     resolve_anchor_candidates,
 )
@@ -1209,10 +1210,7 @@ def _source_credibility_warning(anchor: dict[str, Any] | None) -> str:
         )
     if credibility not in {"low", "unknown"}:
         return ""
-    return (
-        f"注意：这条信息来自 {source}，尚未被站内或主流来源交叉验证，"
-        "可信度较低；以下只能作为线索分析，不作为确定事实。"
-    )
+    return low_credibility_warning(source)
 
 
 def _confirmed_anchor_warning_section(context: SessionContext | None) -> str:
