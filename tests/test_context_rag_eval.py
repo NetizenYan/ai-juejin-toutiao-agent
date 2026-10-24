@@ -1024,6 +1024,33 @@ class ContextRagEvalTests(unittest.TestCase):
 
         self.assertEqual(result["retrieved_evidence_ids"][0], "news:jjrb:carry")
 
+    def test_capability_scoring_reads_long_context_memory_and_ocr_trace(self):
+        row = {
+            "answer": "第2轮那篇是2026年6月7日的《织密新就业群体保障网》，实际是380亿元。[news:jjrb:a]",
+            "citations": ["news:jjrb:a"],
+            "done_evidence": ["news:jjrb:a"],
+            "long_context": {"expect_anchor_terms": ["6月7日"], "expect_topic_terms": ["童装"], "max_chars": 20,
+                             "must_cite": True, "forbid_terms": ["500亿"], "unless_terms": ["380"]},
+            "tool_calls": [{"name": "web_capture_ocr", "result": {"item": {
+                "source_url": "http://x", "image_path": "a.png", "raw_image_hash": "h",
+                "captured_at": "t", "ocr_confidence": 0.9}}}],
+        }
+
+        scored = eval_context_rag._score_capability_row(row)
+
+        self.assertTrue(scored["long_context"]["anchor_recall_at_100"])
+        self.assertFalse(scored["long_context"]["topic_recall_at_100"])
+        self.assertFalse(scored["long_context"]["constraint_kept"])
+        self.assertTrue(scored["memory_source_separated"])
+        self.assertEqual(eval_context_rag._ocr_trace_check(scored), 1.0)
+        self.assertEqual(eval_context_rag._external_fallback_check({**scored, "external_tool_expected": "web_capture_ocr"}), 1.0)
+
+    def test_memory_claim_cited_from_outside_this_turn_is_not_separated(self):
+        row = {"answer": "苏超带动了500亿元消费。[news:old]", "citations": ["news:old"], "done_evidence": ["news:new"],
+               "long_context": {"forbid_terms": ["500亿"], "unless_terms": ["380"]}}
+
+        self.assertFalse(eval_context_rag._score_capability_row(row)["memory_source_separated"])
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -20,6 +20,7 @@ import re
 import statistics
 import time
 from collections import Counter
+from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
@@ -1121,12 +1122,14 @@ def compute_metrics(rows: list[dict[str, Any]], top_k: int = 5) -> dict[str, Any
     ]
     long_context_rows = [row for row in rows if row.get("long_context")]
     topic100_checks = [
-        1.0 if (row.get("long_context") or {}).get("topic_recall_at_100") else 0.0
+        1.0 if row["long_context"]["topic_recall_at_100"] else 0.0
         for row in long_context_rows
+        if "topic_recall_at_100" in row["long_context"]
     ]
     anchor100_checks = [
-        1.0 if (row.get("long_context") or {}).get("anchor_recall_at_100") else 0.0
+        1.0 if row["long_context"]["anchor_recall_at_100"] else 0.0
         for row in long_context_rows
+        if "anchor_recall_at_100" in row["long_context"]
     ]
     memory_source_checks = [
         1.0 if row.get("memory_source_separated") else 0.0
@@ -1519,6 +1522,87 @@ def _chat_sse(
     }
 
 
+async def _last_turn_tool_calls(session_id: int) -> list[dict[str, Any]]:
+    """Tools the session's last user turn called (ai_tool_call rows; the SSE stream does not carry them)."""
+    from sqlalchemy.ext.asyncio import create_async_engine
+    from sqlalchemy.pool import NullPool
+    from config.db_conf import ASYNC_DATABASE_URL
+
+    engine = create_async_engine(ASYNC_DATABASE_URL, poolclass=NullPool)
+    try:
+        async with engine.connect() as conn:
+            result = await conn.execute(text(
+                "SELECT tool_name, result, latency_ms FROM ai_tool_call WHERE message_id = "
+                "(SELECT MAX(id) FROM ai_message WHERE session_id = :sid AND role = 'user') ORDER BY id"
+            ), {"sid": session_id})
+            calls = []
+            for name, payload, latency_ms in result.all():
+                if isinstance(payload, str):
+                    try:
+                        payload = json.loads(payload)
+                    except json.JSONDecodeError:
+                        payload = {}
+                calls.append({"name": name, "result": payload or {}, "latency_ms": latency_ms})
+            return calls
+    finally:
+        await engine.dispose()
+
+
+OCR_TRACE_FIELDS = ("source_url", "image_path", "raw_image_hash", "captured_at", "ocr_confidence")
+
+
+def _answer_body_chars(answer: str) -> int:
+    return len(re.sub(r"\[[^\]]*\]", "", answer or "").strip())
+
+
+def _score_capability_row(row: dict[str, Any]) -> dict[str, Any]:
+    """Fill the long-context, memory and web/OCR fields the summary metrics read."""
+    scored = dict(row)
+    answer = str(scored.get("answer") or "")
+    cited = {normalize_ref(ref) for ref in scored.get("citations") or []}
+    evidence = {normalize_ref(ref) for ref in scored.get("done_evidence") or []}
+    calls = scored.get("tool_calls") or []
+    ocr_items = [
+        (call.get("result") or {}).get("item") for call in calls
+        if call.get("name") == "web_capture_ocr" and isinstance((call.get("result") or {}).get("item"), dict)
+    ]
+    if ocr_items:
+        scored["ocr_trace"] = {field: ocr_items[0].get(field) for field in OCR_TRACE_FIELDS}
+    long_context = scored.get("long_context")
+    if isinstance(long_context, dict):
+        lc = dict(long_context)
+        if lc.get("expect_topic_terms"):
+            lc["topic_recall_at_100"] = any(term in answer for term in lc["expect_topic_terms"])
+        if lc.get("expect_anchor_terms") or lc.get("expect_anchor_ids"):
+            lc["anchor_recall_at_100"] = (
+                any(term in answer for term in lc.get("expect_anchor_terms") or [])
+                or bool(cited & set(lc.get("expect_anchor_ids") or []))
+            )
+        if lc.get("max_chars"):
+            lc["body_chars"] = _answer_body_chars(answer)
+            lc["constraint_kept"] = lc["body_chars"] <= int(lc["max_chars"])
+        if lc.get("must_cite"):
+            lc["cited"] = bool(cited)
+        scored["long_context"] = lc
+        # Memory (summaries, earlier turns, user claims) must never be cited as evidence: every citation
+        # comes from this turn's evidence, and a remembered claim (forbid_terms) is only repeated when the
+        # answer also gives the evidence-backed figure (unless_terms), i.e. corrects it.
+        repeats_memory = any(term in answer for term in lc.get("forbid_terms") or []) and not any(
+            term in answer for term in lc.get("unless_terms") or []
+        )
+        scored["memory_source_separated"] = cited <= evidence and not repeats_memory
+    if scored.get("expect_station_match"):
+        roles = ((scored.get("done") or {}).get("agentOrchestration") or {}).get("roles") or []
+        verifier = next((r.get("details") or {} for r in roles if r.get("role") == "EvidenceVerifier"), {})
+        scored["station_matched_count"] = int(verifier.get("station_matched_count") or 0)
+        scored["station_match_ok"] = scored["station_matched_count"] > 0
+    if scored.get("expect_answer_terms_any"):
+        scored["answer_terms_ok"] = any(term in answer for term in scored["expect_answer_terms_any"])
+    if scored.get("forbid_answer_terms"):
+        scored["forbidden_terms_absent"] = not any(term.lower() in answer.lower() for term in scored["forbid_answer_terms"])
+    return scored
+
+
 def evaluate_full_e2e(
     cases: list[dict[str, Any]],
     *,
@@ -1570,6 +1654,15 @@ def evaluate_full_e2e(
             "route": (validation or {}).get("route") or case.get("expected_route"),
             "retrieval_query": None,
         })
+        if case.get("capability") and session_id:
+            try:
+                # evaluate_full_e2e runs inside async_main's loop, so the DB query gets its own thread and loop.
+                with ThreadPoolExecutor(max_workers=1) as pool:
+                    final["tool_calls"] = pool.submit(asyncio.run, _last_turn_tool_calls(int(session_id))).result()
+            except Exception as exc:  # noqa: BLE001 - a DB hiccup should not drop the row
+                final["tool_calls_error"] = str(exc)
+            final["turn_count"] = len(_case_turns(case))
+            final = _score_capability_row(final)
         rows.append(_enrich_b_v3_eval_row(final))
     return rows
 
