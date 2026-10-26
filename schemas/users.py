@@ -1,11 +1,32 @@
 from typing import Literal, Optional
 
-from pydantic import BaseModel, Field, ConfigDict
+from pydantic import BaseModel, Field, ConfigDict, field_validator
 
 
 class UserRequest(BaseModel):
-    username: str
-    password: str
+    """Login. Only basic bounds, so accounts created before the register rules still sign in."""
+    username: str = Field(..., min_length=1, max_length=50)
+    password: str = Field(..., min_length=1, max_length=128)
+
+    @field_validator("username")
+    @classmethod
+    def _strip_username(cls, value: str) -> str:
+        return value.strip()
+
+
+class RegisterRequest(UserRequest):
+    """Register. user.username is VARCHAR(50): longer names used to fail in the database with a 500.
+    The password minimum matches UserChangePasswordRequest."""
+    username: str = Field(..., min_length=3, max_length=50)
+    password: str = Field(..., min_length=6, max_length=128)
+
+    @field_validator("username")
+    @classmethod
+    def _username_has_text(cls, value: str) -> str:
+        value = value.strip()
+        if len(value) < 3:
+            raise ValueError("用户名至少 3 个字符")
+        return value
 
 
 # user_info 对应的类：基础类 + Info 类（id、用户名）

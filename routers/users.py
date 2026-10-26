@@ -3,7 +3,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from starlette import status
 
 from models.users import User
-from schemas.users import UserRequest, UserAuthResponse, UserInfoResponse, UserUpdateRequest, UserChangePasswordRequest
+from schemas.users import RegisterRequest, UserRequest, UserAuthResponse, UserInfoResponse, UserUpdateRequest, UserChangePasswordRequest
 
 from config.db_conf import get_db
 from crud import users
@@ -14,7 +14,7 @@ router = APIRouter(prefix="/api/user", tags=["users"])
 
 
 @router.post("/register")
-async def register(user_data: UserRequest, db: AsyncSession = Depends(get_db)):  # 用户信息 和 db
+async def register(user_data: RegisterRequest, db: AsyncSession = Depends(get_db)):  # 用户信息 和 db
     # 注册逻辑：验证用户是否存在 -> 创建用户 → 生成 Token  → 响应结果
     existing_user = await users.get_user_by_username(db, user_data.username)
     if existing_user:
