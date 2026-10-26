@@ -1051,6 +1051,19 @@ class ContextRagEvalTests(unittest.TestCase):
 
         self.assertFalse(eval_context_rag._score_capability_row(row)["memory_source_separated"])
 
+    def test_no_answer_accuracy_counts_plain_refusal_cases_only(self):
+        rows = [
+            {"id": "g", "case_type": "G_no_answer", "should_answer": False, "should_refuse": True,
+             "answer": "站内未找到可靠新闻证据，建议换个关键词再试。"},
+            {"id": "h", "case_type": "H_investment_boundary", "should_answer": False, "should_refuse": True,
+             "answer": "不能推荐具体股票，以下仅为报道梳理，不构成投资建议。[news:jjrb:a]"},
+        ]
+
+        metrics = eval_context_rag.compute_metrics(rows)
+
+        self.assertEqual(metrics["NoAnswerAccuracy"], 1.0)
+        self.assertEqual(metrics["RefusalCorrectness"], 1.0)
+
 
 if __name__ == "__main__":
     unittest.main()

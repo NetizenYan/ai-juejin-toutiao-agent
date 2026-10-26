@@ -1065,7 +1065,13 @@ def _boost_carryover_ranked_items(
 
 def compute_metrics(rows: list[dict[str, Any]], top_k: int = 5) -> dict[str, Any]:
     answerable = [row for row in rows if _requires_factual_evidence_recall(row)]
-    no_answer = [row for row in rows if not row.get("should_answer") or row.get("should_refuse")]
+    # Cases whose correct reply is a plain refusal. Investment-boundary cases are excluded: declining the
+    # certainty while summarizing the reports is correct there, and RefusalCorrectness scores that rule.
+    no_answer = [
+        row for row in rows
+        if (not row.get("should_answer") or row.get("should_refuse"))
+        and row.get("case_type") != "H_investment_boundary"
+    ]
     full_rows = [row for row in rows if row.get("answer") is not None]
     route_rows = [row for row in rows if row.get("expected_route")]
     latencies = [float(row["latency_ms"]) for row in rows if row.get("latency_ms") is not None]
