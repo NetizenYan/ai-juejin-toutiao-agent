@@ -20,18 +20,30 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any
 
-from report_raw_3g_dataset_profile import (
-    find_jjrb_csv,
-    iter_xlsx_rows,
-    norm,
-    parse_date,
-    select_rmrb_files,
-    top_rows,
-)
+# `python -m scripts.report_capital_market_candidate_profile` (project convention) and
+# `python scripts/report_capital_market_candidate_profile.py` both work.
+try:
+    from scripts.report_raw_3g_dataset_profile import (
+        find_jjrb_csv,
+        iter_xlsx_rows,
+        norm,
+        parse_date,
+        select_rmrb_files,
+        top_rows,
+    )
+except ModuleNotFoundError:
+    from report_raw_3g_dataset_profile import (  # type: ignore[no-redef]
+        find_jjrb_csv,
+        iter_xlsx_rows,
+        norm,
+        parse_date,
+        select_rmrb_files,
+        top_rows,
+    )
 
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
-DEFAULT_BAIDU_ROOT = Path("D:/Files/BaiDu")
+DEFAULT_BAIDU_ROOT = PROJECT_ROOT / "data" / "raw"
 DEFAULT_OUTPUT_JSON = PROJECT_ROOT / "reports" / "capital_market_candidate_profile_2026_06_21.json"
 DEFAULT_OUTPUT_MD = PROJECT_ROOT / "docs" / "capital_market_candidate_profile_2026_06_21.md"
 AS_OF = datetime(2026, 6, 21)

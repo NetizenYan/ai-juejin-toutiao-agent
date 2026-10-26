@@ -24,7 +24,8 @@ from xml.etree.ElementTree import iterparse
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 DEFAULT_OUTPUT_JSON = PROJECT_ROOT / "reports" / "raw_3g_dataset_profile_2026_06_21.json"
 DEFAULT_OUTPUT_MD = PROJECT_ROOT / "docs" / "raw_3g_dataset_profile_2026_06_21.md"
-DEFAULT_BAIDU_ROOT = Path("D:/Files/BaiDu")
+# Raw dumps live under data/raw/ (git-ignored): 经济日报*.csv, RMRB数据/, 006-新闻联播数据/.
+DEFAULT_BAIDU_ROOT = PROJECT_ROOT / "data" / "raw"
 
 
 DOMAIN_RULES: list[tuple[str, list[str]]] = [

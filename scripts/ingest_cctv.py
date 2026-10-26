@@ -10,7 +10,7 @@
 幂等：先删除 author='新闻联播' 的旧行再批量插入。
 
 用法（项目根目录）：
-    <agent-python> -m scripts.ingest_cctv --root "D:\\Files\\BaiDu\\006-新闻联播数据"
+    <agent-python> -m scripts.ingest_cctv --root "data/raw/006-新闻联播数据"
 """
 from __future__ import annotations
 
@@ -100,6 +100,6 @@ async def main(root: str):
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
-    parser.add_argument("--root", default=r"D:\Files\BaiDu\006-新闻联播数据")
+    parser.add_argument("--root", default=os.path.join("data", "raw", "006-新闻联播数据"))
     args = parser.parse_args()
     asyncio.run(main(args.root))
