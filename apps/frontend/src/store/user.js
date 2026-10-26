@@ -235,14 +235,11 @@ export const useUserStore = defineStore('user', {
     }
   },
   
-  // 添加持久化配置
+  // 持久化（pinia-plugin-persistedstate v4 语法）。旧写法里的 enabled/strategies 是 v1 的配置，
+  // v4 会忽略它们，实际一直按 store id「user」存在 localStorage；这里显式写出同样的行为，
+  // 不改存储 key，已登录用户升级后不会被登出。
   persist: {
-    enabled: true,
-    strategies: [
-      {
-        key: 'user-store',
-        storage: localStorage
-      }
-    ]
+    key: 'user',
+    storage: localStorage
   }
 });
