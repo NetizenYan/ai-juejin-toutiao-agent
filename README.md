@@ -96,6 +96,8 @@ utils/               鉴权、安全、通用工具
 
 ```bash
 pip install -r requirements.txt
+# 可选：网页截图 OCR、本地重排等功能的依赖，按需安装（说明见文件内注释）
+# pip install -r requirements-optional.txt && python -m playwright install chromium
 cp .env.example .env        # Windows: copy .env.example .env
 
 # 初始化 MySQL：先建业务表，再建 AI 会话表（后者外键引用 user 表）

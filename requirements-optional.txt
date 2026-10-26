@@ -1,0 +1,18 @@
+# Optional features. The core service runs with requirements.txt alone; each group below is only
+# needed for the feature named in its header. Versions are the ones verified on 2026-10-24.
+
+# Web screenshot OCR (web_capture_ocr tool, harness/web_capture.py + harness/ocr_providers.py).
+# After installing: `python -m playwright install chromium`. On hosts without NSS/ATK system libraries
+# and without root, extract them and point WEB_CAPTURE_LIBRARY_PATH at the directory; CJK fonts are
+# needed for Chinese pages to render. Keep OCR_ENABLE_MKLDNN=false on PaddlePaddle 3.x CPU.
+playwright==1.64.1
+paddleocr==3.7.0
+paddlepaddle==3.3.1
+
+# Local cross-encoder rerank, used only when RERANKER_PROVIDER is empty (harness/reranker.py).
+# Without it rerank falls back to recall order; production uses the SiliconFlow / hf-api rerank API.
+sentence-transformers>=3.0
+
+# Offline corpus audit script only (scripts/clean_corpus_audit.py).
+rapidfuzz
+psycopg[binary]
