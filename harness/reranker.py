@@ -18,20 +18,30 @@ from harness.reranker_api import rerank_with_api
 
 logger = logging.getLogger(__name__)
 
-# 模型已预下载到本地 HF 缓存 → 运行时离线加载（快、稳、不依赖网络/镜像）。
-# 首次下载请用官方源：HF_ENDPOINT=https://huggingface.co python -m scripts.warmup_reranker
-os.environ.setdefault("HF_HUB_OFFLINE", "1")
-
+# 本地 cross-encoder 默认只读本地 HF 缓存（RERANKER_LOCAL_FILES_ONLY=true），不联网下载。
+# 之前在导入时全局设置 HF_HUB_OFFLINE=1：它进入后端进程环境，又被 web MCP 子进程继承，
+# 让 PaddleOCR 在新机器上无法从 HuggingFace 下载模型。现在只作用于这一次模型加载。
 _RERANKER = None
+_LOAD_ERROR: str | None = None
 
 
 def _load():
-    global _RERANKER
-    if _RERANKER is None:
+    """Lazily load the local cross-encoder once; a failure is remembered instead of retried per request."""
+    global _RERANKER, _LOAD_ERROR
+    if _RERANKER is not None:
+        return _RERANKER
+    if _LOAD_ERROR is not None:
+        raise RuntimeError(_LOAD_ERROR)
+    try:
         from sentence_transformers import CrossEncoder
         # 加载时读取（确保 .env 已被 config 加载），默认 v2-m3（中文更强）
         model_name = os.getenv("RERANKER_MODEL", "BAAI/bge-reranker-v2-m3")
-        _RERANKER = CrossEncoder(model_name, max_length=512)
+        local_only = (os.getenv("RERANKER_LOCAL_FILES_ONLY") or "true").strip().lower() in {"1", "true", "yes", "on"}
+        _RERANKER = CrossEncoder(model_name, max_length=512, local_files_only=local_only)
+    except Exception as exc:  # noqa: BLE001 - missing package or model: rerank falls back to recall order
+        _LOAD_ERROR = f"local reranker unavailable: {type(exc).__name__}: {exc}"
+        logger.warning("%s; using recall order until restart", _LOAD_ERROR)
+        raise RuntimeError(_LOAD_ERROR) from exc
     return _RERANKER
 
 
