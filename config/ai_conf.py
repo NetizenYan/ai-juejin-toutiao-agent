@@ -188,6 +188,8 @@ class AISettings:
 
     # Harness 硬限额（MVP 护栏）
     max_tool_calls_per_turn: int = _int("MAX_TOOL_CALLS_PER_TURN", 5)
+    # /api/ai/chat rejects longer messages (422) instead of sending them to the LLM.
+    ai_chat_max_message_chars: int = _int("AI_CHAT_MAX_MESSAGE_CHARS", 4000)
     max_web_calls_per_session: int = _int("MAX_WEB_CALLS_PER_SESSION", 3)
     max_fetch_bytes: int = _int("MAX_FETCH_BYTES", 1024 * 1024)
     tool_timeout_seconds: int = _int("TOOL_TIMEOUT_SECONDS", 30)

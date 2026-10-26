@@ -26,6 +26,8 @@
           rows="1"
           autosize
           type="textarea"
+          maxlength="4000"
+          show-word-limit
           placeholder="请输入问题..."
           class="chat-input"
           @keypress.enter.prevent="sendMessage"
@@ -199,7 +201,11 @@ const fetchAIResponse = async (userMessage) => {
 
     if (!response.ok) {
       const error = await response.json().catch(() => ({}));
-      throw new Error(error.detail || error.message || `HTTP error! status: ${response.status}`);
+      // FastAPI validation errors (422) carry detail as a list: [{msg: "Value error, 消息过长…"}]
+      const detail = Array.isArray(error.detail)
+        ? error.detail.map((item) => String(item?.msg || '').replace(/^Value error,\s*/, '')).filter(Boolean).join('；')
+        : error.detail;
+      throw new Error(detail || error.message || `HTTP error! status: ${response.status}`);
     }
 
     // 处理后端 SSE 流：{delta} / {event:'done',sessionId} / [DONE] / {event:'error',detail}
