@@ -45,7 +45,7 @@ def _extract_keywords(text: str, max_terms: int = 12) -> list[str]:
 
 
 async def get_categories(db: AsyncSession, skip: int = 0, limit: int = 100):
-    stmt = select(Category).offset(skip).limit(limit)
+    stmt = select(Category).order_by(Category.sort_order, Category.id).offset(skip).limit(limit)
     result = await db.execute(stmt)
     return result.scalars().all()
 

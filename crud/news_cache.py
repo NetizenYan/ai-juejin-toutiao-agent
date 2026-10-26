@@ -10,22 +10,16 @@ from schemas.news import NewsDetailResponse, RelatedNewsResponse
 
 
 async def get_categories(db: AsyncSession, skip: int = 0, limit: int = 100):
-    # 先尝试从缓存中获取数据
-    cached_categories = await get_cached_categories()
-    if cached_categories:
-        return cached_categories
-
-    stmt = select(Category).offset(skip).limit(limit)
-    result = await db.execute(stmt)
-    categories = result.scalars().all()  # ORM
-
-    # 写入缓存
-    if categories:
-        categories = jsonable_encoder(categories)
-        await set_cache_categories(categories)
-
-    # 返回数据
-    return categories
+    # The cache holds the full ordered list under one key; paging is applied afterwards. Caching the
+    # page itself under that key served the first caller's skip/limit to everyone for an hour.
+    categories = await get_cached_categories()
+    if not categories:
+        stmt = select(Category).order_by(Category.sort_order, Category.id)
+        result = await db.execute(stmt)
+        categories = jsonable_encoder(result.scalars().all())
+        if categories:
+            await set_cache_categories(categories)
+    return categories[skip:skip + limit]
 
 
 async def get_news_list(db: AsyncSession, category_id: int, skip: int = 0, limit: int = 10):

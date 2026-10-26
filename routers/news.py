@@ -18,7 +18,8 @@ router = APIRouter(prefix="/api/news", tags=["news"])
 
 
 @router.get("/categories")
-async def get_categories(skip: int = 0, limit: int = 100, db: AsyncSession = Depends(get_db)):
+async def get_categories(skip: int = Query(0, ge=0), limit: int = Query(100, ge=1, le=100),
+                         db: AsyncSession = Depends(get_db)):
     # 先获取数据库里面新闻分类数据 → 先定义模型类 → 封装查询数据的方法
     categories = await news_cache.get_categories(db, skip, limit)
     return {
