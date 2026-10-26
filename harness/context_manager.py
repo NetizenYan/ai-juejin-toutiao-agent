@@ -1070,10 +1070,6 @@ def render_session_context_section(context: SessionContext) -> str:
             "不可作为新闻事实来源。新闻事实只能来自本轮 evidence_pack。"
         ),
     }
-    recent_messages = [
-        {"role": message["role"], "content": _truncate(message["content"], 500)}
-        for message in context.recent_messages
-    ]
     referenced = context.referenced_turn
     reference_line = (
         f"用户这句话指的是第{referenced['turn']}轮：「{referenced['cue']}」"
@@ -1088,19 +1084,18 @@ def render_session_context_section(context: SessionContext) -> str:
         + reference_line
         + "这里是会话摘要和短期记忆，只用于理解上下文、指代和用户约束，"
         "不可作为新闻事实来源。\n"
-        f"{json.dumps(payload, ensure_ascii=False, indent=2)}\n"
+        f"{json.dumps(payload, ensure_ascii=False, separators=(',', ':'))}\n"
         "</session_context>\n\n"
         + (
             '<long_context_memory use_as_evidence="false">\n'
             "Long context memory is not factual evidence; it only preserves topics, anchors, constraints, and references.\n"
-            f"{json.dumps(context.long_context_memory, ensure_ascii=False, indent=2)}\n"
+            f"{json.dumps(context.long_context_memory, ensure_ascii=False, separators=(',', ':'))}\n"
             "</long_context_memory>\n\n"
             if context.long_context_memory
             else ""
         )
-        + "<recent_messages>\n"
-        "最近 4-6 轮原文如下；仍不得把历史回答当作新闻事实证据。\n"
-        f"{json.dumps(recent_messages, ensure_ascii=False, indent=2)}\n"
-        "</recent_messages>\n"
+        # The recent turns follow as real chat messages (_build_final_messages appends the same
+        # context.recent_messages); embedding them here too sent every recent turn to the model twice.
+        + "最近几轮原文见后面的对话消息；历史回答同样不得当作新闻事实证据。"
         "如果 evidence_pack 不支持用户问题，必须拒答或说明未找到可靠证据。"
     )

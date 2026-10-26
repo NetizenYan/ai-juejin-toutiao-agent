@@ -255,6 +255,22 @@ class AgentContractTests(unittest.TestCase):
         self.assertIn("开头摘要", context)
         self.assertIn("5%以上", agent._build_evidence_pack([{"items": [parent]}])[0]["snippet"])
 
+    def test_recent_turns_reach_the_model_once(self):
+        from harness.context_manager import build_session_context
+
+        history = [
+            {"role": "user", "content": "独一无二的问题甲：算力网有什么报道？"},
+            {"role": "assistant", "content": "独一无二的回答乙。[news:jjrb:a]"},
+            {"role": "user", "content": "那它对人工智能有什么影响？"},
+        ]
+        context = build_session_context(history)
+        messages = agent._build_final_messages(context.recent_messages, [], session_context=context)
+        text = "\n".join(str(m["content"]) for m in messages)
+
+        # The ledgers quote the user's words in short cues by design; whole turns must not be re-sent.
+        self.assertEqual(text.count("独一无二的回答乙"), 1)
+        self.assertNotIn("<recent_messages>", text)
+
     def test_station_intent_uses_deterministic_tools_before_model_choice(self):
         calls = agent._deterministic_tool_calls("给我推荐几篇文章", user_id=42)
 
