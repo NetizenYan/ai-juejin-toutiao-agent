@@ -100,14 +100,16 @@ pip install -r requirements.txt
 # pip install -r requirements-optional.txt && python -m playwright install chromium
 cp .env.example .env        # Windows: copy .env.example .env
 
-# 初始化 MySQL：先建业务表，再建 AI 会话表（后者外键引用 user 表）
-mysql -u root -p < sql/mysql_schema.sql
-mysql -u root -p < scripts/ai_tables.sql
+# 初始化 MySQL：先建业务表和新闻分类，再建 AI 会话表（后者外键引用 user 表）
+# 必须带 --default-character-set=utf8mb4，否则中文会被双重编码成乱码
+mysql --default-character-set=utf8mb4 -u root -p < sql/mysql_schema.sql
+mysql --default-character-set=utf8mb4 -u root -p < sql/seed_categories.sql
+mysql --default-character-set=utf8mb4 -u root -p < scripts/ai_tables.sql
 
 python -m uvicorn main:app --host 127.0.0.1 --port 8030
 ```
 
-建表后 `news_category` 为空，需要先插入分类和新闻数据，首页列表才有内容。
+`sql/seed_categories.sql` 会写入 9 个新闻分类；新闻数据需要另外导入，首页列表才有内容。
 
 几个需要按环境调整的配置（详见 `.env.example`）：
 

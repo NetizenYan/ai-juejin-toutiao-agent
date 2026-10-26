@@ -1,11 +1,16 @@
 -- Core MySQL schema for the business API (users, news, favorites, history).
 -- Mirrors models/*.py. Run this first, then scripts/ai_tables.sql (its FKs reference `user`).
 --
---   mysql -u root -p < sql/mysql_schema.sql
---   mysql -u root -p < scripts/ai_tables.sql
+--   mysql --default-character-set=utf8mb4 -u root -p < sql/mysql_schema.sql
+--   mysql --default-character-set=utf8mb4 -u root -p < sql/seed_categories.sql
+--   mysql --default-character-set=utf8mb4 -u root -p < scripts/ai_tables.sql
 --
 -- Unique key names matter: utils/exception.py maps duplicate-entry errors by these names.
 -- IDs are INT UNSIGNED so the FKs in scripts/ai_tables.sql match.
+
+-- Without this, a client defaulting to latin1 double-encodes every Chinese string in this file
+-- (comments, seed rows): news_category names came out as "å¤´æ¡" instead of "头条".
+SET NAMES utf8mb4;
 
 CREATE DATABASE IF NOT EXISTS news_app DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
 USE news_app;

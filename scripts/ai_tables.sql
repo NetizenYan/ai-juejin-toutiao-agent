@@ -1,3 +1,6 @@
+-- Without this, a client defaulting to latin1 double-encodes every Chinese string in this file
+-- (comments, seed rows): news_category names came out as "å¤´æ¡" instead of "头条".
+SET NAMES utf8mb4;
 USE news_app;
 
 CREATE TABLE IF NOT EXISTS `ai_session` (
