@@ -1,11 +1,21 @@
+from contextlib import asynccontextmanager
+
 from fastapi import FastAPI
 from routers import news, users, favorite, history, ai
 from fastapi.middleware.cors import CORSMiddleware
 import os
 
+from harness.mcp_pool import close_all as close_mcp_sessions
 from utils.exception_handlers import register_exception_handlers
 
-app = FastAPI()
+
+@asynccontextmanager
+async def lifespan(_app: FastAPI):
+    yield
+    await close_mcp_sessions()  # stop the resident MCP server subprocesses
+
+
+app = FastAPI(lifespan=lifespan)
 
 # 注册异常处理器
 register_exception_handlers(app)

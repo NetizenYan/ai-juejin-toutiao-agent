@@ -10,8 +10,9 @@
 """
 from __future__ import annotations
 
+from contextlib import asynccontextmanager
 from datetime import datetime
-from typing import Any, Optional
+from typing import Any, AsyncIterator, Optional
 
 from mcp.server.fastmcp import FastMCP
 
@@ -19,7 +20,18 @@ from config.db_conf import AsyncSessionLocal, async_engine
 from crud import news as news_crud
 from crud import history as history_crud
 
-mcp = FastMCP("toutiao-business")
+
+@asynccontextmanager
+async def _lifespan(_server: FastMCP) -> AsyncIterator[None]:
+    # The server process is resident (harness/mcp_pool.py): keep the connection pool across tool
+    # calls and release it once, on exit, instead of disposing it after every call.
+    try:
+        yield
+    finally:
+        await async_engine.dispose()
+
+
+mcp = FastMCP("toutiao-business", lifespan=_lifespan)
 
 
 # ---------- 投影：把 ORM 对象压成模型可见的最小字段 ----------
@@ -63,11 +75,8 @@ def _detail(item: Any) -> dict:
 async def news_search(query: str, limit: int = 5) -> dict:
     """按关键词搜索站内新闻，返回标题+摘要+证据编号（不返回全文，不暴露 SQL）。"""
     limit = max(1, min(int(limit), 20))
-    try:
-        async with AsyncSessionLocal() as db:
-            rows = await news_crud.search_news(db, query, limit=limit)
-    finally:
-        await async_engine.dispose()
+    async with AsyncSessionLocal() as db:
+        rows = await news_crud.search_news(db, query, limit=limit)
     return {
         "tool": "news_search",
         "items": [_list_item(r) for r in rows],
@@ -78,11 +87,8 @@ async def news_search(query: str, limit: int = 5) -> dict:
 @mcp.tool()
 async def news_detail(news_id: int) -> dict:
     """获取单条站内新闻的详情摘录 + 证据编号。"""
-    try:
-        async with AsyncSessionLocal() as db:
-            row = await news_crud.get_news_detail(db, int(news_id))
-    finally:
-        await async_engine.dispose()
+    async with AsyncSessionLocal() as db:
+        row = await news_crud.get_news_detail(db, int(news_id))
     if not row:
         return {"tool": "news_detail", "item": None, "evidence_ids": []}
     return {"tool": "news_detail", "item": _detail(row), "evidence_ids": [f"news:{row.id}"]}
@@ -92,11 +98,8 @@ async def news_detail(news_id: int) -> dict:
 async def user_recent_history(user_id: int, limit: int = 5) -> dict:
     """获取某用户最近浏览过的新闻（仅 news_qa / recommendation 意图可用；权限在 harness 控制）。"""
     limit = max(1, min(int(limit), 20))
-    try:
-        async with AsyncSessionLocal() as db:
-            rows, _total = await history_crud.get_history_list(db, int(user_id), page=1, page_size=limit)
-    finally:
-        await async_engine.dispose()
+    async with AsyncSessionLocal() as db:
+        rows, _total = await history_crud.get_history_list(db, int(user_id), page=1, page_size=limit)
     items = [_list_item(news) for (news, _view_time, _hid) in rows]
     return {
         "tool": "user_recent_history",
@@ -109,11 +112,8 @@ async def user_recent_history(user_id: int, limit: int = 5) -> dict:
 async def recommend_news(user_id: int, limit: int = 5) -> dict:
     """推荐新闻候选（MVP 规则版：按热门+最新排序）。无主题的"推荐/看看"类请求用它，不要用关键词搜。user_id 由 harness 注入。"""
     limit = max(1, min(int(limit), 10))
-    try:
-        async with AsyncSessionLocal() as db:
-            rows = await news_crud.recommend_news(db, limit=limit)
-    finally:
-        await async_engine.dispose()
+    async with AsyncSessionLocal() as db:
+        rows = await news_crud.recommend_news(db, limit=limit)
     items = [_list_item(r) for r in rows]
     return {
         "tool": "recommend_news",

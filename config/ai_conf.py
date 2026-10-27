@@ -193,6 +193,8 @@ class AISettings:
     max_web_calls_per_session: int = _int("MAX_WEB_CALLS_PER_SESSION", 3)
     max_fetch_bytes: int = _int("MAX_FETCH_BYTES", 1024 * 1024)
     tool_timeout_seconds: int = _int("TOOL_TIMEOUT_SECONDS", 30)
+    # One long-lived subprocess per MCP server instead of one per message (harness/mcp_pool.py).
+    mcp_resident_sessions: bool = _bool("MCP_RESIDENT_SESSIONS", True)
     # Evidence text per article given to the model and validator: the matched chunks, not just the opening
     # 180 chars (figures deeper in the chunk were cut off and the model answered "未找到具体数字").
     # Keep these small for local models with a 4096-token context.

@@ -1,6 +1,6 @@
 """MCP 客户端：harness 通过 stdio 连接业务 MCP server，发现并调用业务工具。
 
-设计：一次请求开一个 session（context manager），其内可多次 call_tool，避免每次调用都重启 server。
+设计：server 子进程常驻、跨请求复用（harness/mcp_pool.py）；business_session() 取得共享会话。
 模型只拿到 list_tool_defs() 给出的 OpenAI 工具描述；真正执行由 Harness 经本客户端完成。
 """
 from __future__ import annotations
@@ -11,7 +11,8 @@ import sys
 from contextlib import asynccontextmanager
 
 from mcp import ClientSession, StdioServerParameters
-from mcp.client.stdio import stdio_client
+
+from harness.mcp_pool import TRANSPORT_ERRORS, mark_broken, mcp_session
 
 _PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
@@ -28,10 +29,8 @@ def _server_params() -> StdioServerParameters:
 
 @asynccontextmanager
 async def business_session():
-    async with stdio_client(_server_params()) as (read, write):
-        async with ClientSession(read, write) as session:
-            await session.initialize()
-            yield session
+    async with mcp_session("business", _server_params) as session:
+        yield session
 
 
 async def list_tool_defs(session: ClientSession) -> list[dict]:
@@ -69,7 +68,11 @@ def _extract_result(result) -> dict:
 
 
 async def call_tool(session: ClientSession, name: str, arguments: dict) -> dict:
-    result = await session.call_tool(name, arguments)
+    try:
+        result = await session.call_tool(name, arguments)
+    except TRANSPORT_ERRORS:
+        mark_broken(session)  # the server is gone: the next request starts a fresh one
+        raise
     if getattr(result, "isError", False):
         return {"tool": name, "error": "tool execution failed", "evidence_ids": []}
     return _extract_result(result)

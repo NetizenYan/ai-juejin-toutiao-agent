@@ -6,8 +6,9 @@ import os
 import sys
 from contextlib import asynccontextmanager
 
-from mcp import ClientSession, StdioServerParameters
-from mcp.client.stdio import stdio_client
+from mcp import StdioServerParameters
+
+from harness.mcp_pool import mcp_session
 
 _PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
@@ -23,7 +24,5 @@ def _server_params() -> StdioServerParameters:
 
 @asynccontextmanager
 async def web_session():
-    async with stdio_client(_server_params()) as (read, write):
-        async with ClientSession(read, write) as session:
-            await session.initialize()
-            yield session
+    async with mcp_session("web", _server_params) as session:
+        yield session
