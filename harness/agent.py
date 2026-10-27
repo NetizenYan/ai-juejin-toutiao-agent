@@ -27,7 +27,7 @@ from harness.mcp_client import business_session, list_tool_defs, call_tool
 from harness.tool_registry import ToolPolicyError, validate_tool_arguments
 from harness.web_mcp_client import web_session
 from harness.rag_mcp_client import rag_session
-from harness.reranker import rerank
+from harness.reranker import fuse_with_recall, rerank
 from harness.rag_ranking import recency_reference_ts
 from harness.rag_index import add_external_doc
 from harness.external_evidence import verify_external_evidence
@@ -1751,7 +1751,9 @@ async def run_chat(history_messages: list[dict], db: Optional[AsyncSession] = No
     for result in tool_results:
         if result.get("tool") == "retrieve_news" and result.get("items"):
             rerank_query = str(result.get("_ocr_compare_query") or retrieval_user)
-            reranked = await rerank(rerank_query, result["items"], top_k=25)  # 先精排 chunk
+            # 先精排全部 chunk，再与召回分融合（只看精排会丢掉召回排第 1 的答案），取前 25
+            reranked = await rerank(rerank_query, result["items"], top_k=len(result["items"]))
+            reranked = fuse_with_recall(reranked, settings.rerank_fusion_weight)[:25]
             reranked = _boost_carryover_ranked_items(
                 reranked,
                 result.get("carryover_evidence_ids") or carryover_evidence_ids,

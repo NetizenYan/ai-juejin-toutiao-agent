@@ -93,5 +93,26 @@ class FusionRerankTests(unittest.TestCase):
         self.assertEqual(ranked[0]["id"], "a")
 
 
+class FuseWithRecallTests(unittest.TestCase):
+    # Recall ranks "gold" first; the cross-encoder slightly prefers "near" and strongly dislikes "noise".
+    items = [
+        {"id": "near", "rerank_score": 0.30, "hybrid_score": 0.60},
+        {"id": "gold", "rerank_score": 0.25, "hybrid_score": 0.90},
+        {"id": "noise", "rerank_score": 0.01, "hybrid_score": 0.70},
+    ]
+
+    def test_recall_rank_one_survives_a_close_rerank(self):
+        fused = reranker.fuse_with_recall(self.items, 0.5)
+
+        self.assertEqual([it["id"] for it in fused], ["gold", "near", "noise"])
+        self.assertEqual(fused[0]["cross_encoder_score"], 0.25)
+        self.assertEqual(self.items[1]["rerank_score"], 0.25)  # inputs are not mutated
+
+    def test_weight_one_or_missing_rerank_scores_keep_the_input_order(self):
+        self.assertIs(reranker.fuse_with_recall(self.items, 1.0), self.items)
+        recall_order = [{"id": "a", "score": 0.9}, {"id": "b", "score": 0.8}]
+        self.assertIs(reranker.fuse_with_recall(recall_order, 0.5), recall_order)
+
+
 if __name__ == "__main__":
     unittest.main()

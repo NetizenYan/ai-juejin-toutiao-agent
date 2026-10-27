@@ -195,6 +195,9 @@ class AISettings:
     tool_timeout_seconds: int = _int("TOOL_TIMEOUT_SECONDS", 30)
     # One long-lived subprocess per MCP server instead of one per message (harness/mcp_pool.py).
     mcp_resident_sessions: bool = _bool("MCP_RESIDENT_SESSIONS", True)
+    # Weight of the cross-encoder when blending it with the recall score (harness/reranker.fuse_with_recall);
+    # 1.0 = rerank only (the behavior before 2026-10-27).
+    rerank_fusion_weight: float = _float("RERANK_FUSION_WEIGHT", 0.5)
     # Evidence text per article given to the model and validator: the matched chunks, not just the opening
     # 180 chars (figures deeper in the chunk were cut off and the model answered "未找到具体数字").
     # Keep these small for local models with a 4096-token context.

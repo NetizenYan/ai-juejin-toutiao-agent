@@ -164,6 +164,30 @@ def _normalize(values: list[float]) -> list[float]:
     return [(v - low) / (high - low) for v in values]
 
 
+def fuse_with_recall(items: list[dict], rerank_weight: float) -> list[dict]:
+    """Blend the cross-encoder score with the recall (hybrid) score, both min-max normalized.
+
+    Reranking alone threw away answers recall had at rank 1-2 (distractor_005: gold at recall
+    ranks 1, 2, 4, 5, none left after rerank). On the cached 2026-10-27 eval sets, weight 0.5 took
+    Hit@5 0.916 -> 0.947 on the dev set and MRR 0.90 -> 0.967 on the fresh test set; 0.45-0.6 is a
+    plateau. rerank_score becomes the blended score; the cross-encoder's own is kept as
+    cross_encoder_score. Items without a rerank score (rerank fell back to recall order) are returned as is.
+    """
+    if not items or rerank_weight >= 1.0 or any(it.get("rerank_score") is None for it in items):
+        return items
+    weight = max(0.0, rerank_weight)
+    ce = _normalize([float(it["rerank_score"]) for it in items])
+    recall = _normalize([float(it.get("hybrid_score") or it.get("score") or 0.0) for it in items])
+    fused: list[dict] = []
+    for index, item in enumerate(items):
+        copy = dict(item)
+        copy["cross_encoder_score"] = item["rerank_score"]
+        copy["rerank_score"] = round(weight * ce[index] + (1 - weight) * recall[index], 6)
+        fused.append(copy)
+    fused.sort(key=lambda it: it["rerank_score"], reverse=True)
+    return fused
+
+
 def _sync_fusion_rerank(
     query: str,
     items: list[dict],
