@@ -286,6 +286,17 @@ def _select_collection(query: str) -> tuple[str, str]:
     return CHUNK_COLLECTION, "default"
 
 
+# "2009年9月全国财政收入" dates the figures, not the report: they were broadcast in October. When nothing was
+# published inside the window and the question does not ask about reports from that period, reports up to
+# this many days later are allowed. "2026年3月有没有报道…" keeps the exact window, and an empty result.
+EVENT_REPORT_LAG_DAYS = 92
+_REPORT_WORDS_RE = re.compile(r"报道|新闻|文章|社论|评论员|发表|刊发|刊登|发过|播出|播发")
+
+
+def _asks_for_reports_in_window(query: str) -> bool:
+    return bool(_REPORT_WORDS_RE.search(query or ""))
+
+
 # The econ/policy collection starts 2025-06-10 (scripts/build_econ_corpus.py); 新闻联播 runs 2006 to 2025-04.
 _ECON_COLLECTION_FIRST_YEAR = 2025
 _YEAR_RE = re.compile(r"((?:19|20)\d{2})\s*年")
@@ -480,6 +491,13 @@ async def search_news_rag(
     summary_points, filter_fallback_used = await _query_collections(
         qdrant, vector, candidate_limit, effective_chunk_type_filter, collections, source_values, date_window
     )
+    date_window_extended = False
+    if not summary_points and date_window and not _asks_for_reports_in_window(query):
+        date_window = date_window.extended(EVENT_REPORT_LAG_DAYS)
+        date_window_extended = True
+        summary_points, filter_fallback_used = await _query_collections(
+            qdrant, vector, candidate_limit, effective_chunk_type_filter, collections, source_values, date_window
+        )
     summary_items = _points_to_items(summary_points)
     summary_items, time_aware_ranking = _rerank_items(query, summary_items, effective_ranking, route, now_ts)
     summary_items, summary_low_quality_filtered = _filter_severe_low_quality(summary_items, final_limit)
@@ -520,6 +538,7 @@ async def search_news_rag(
         "collection_name": "+".join(collections),
         "collection_route": collection_reason,
         "date_window": date_window.to_dict() if date_window else None,
+        "date_window_extended": date_window_extended,
     }
     result["evidence_ids"] = [
         evidence_id for item in result["items"] if (evidence_id := _item_evidence_id(item))

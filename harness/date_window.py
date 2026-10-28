@@ -34,6 +34,10 @@ class DateWindow:
     def to_dict(self) -> dict:
         return {"start_ts": self.start_ts, "end_ts": self.end_ts, "label": self.label}
 
+    def extended(self, days: int) -> "DateWindow":
+        """The same start, with reports published up to `days` after the window also allowed."""
+        return DateWindow(self.start_ts, self.end_ts + days * 86400, f"{self.label}+{days}d_reports")
+
 
 def _ts(year: int, month: int, day: int) -> int:
     return int(datetime(year, month, day, tzinfo=timezone.utc).timestamp())

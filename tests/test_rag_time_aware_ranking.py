@@ -40,6 +40,21 @@ class _FakeQdrant:
         return [], None
 
 
+class _WindowQdrant(_FakeQdrant):
+    """Applies the publish_ts range of the query filter, like Qdrant does."""
+
+    async def query_points(self, **kwargs):
+        self.collections.append(kwargs.get("collection_name"))
+        self.query_kwargs.append(kwargs)
+        query_filter = kwargs.get("query_filter")
+        ranges = [c.range for c in (query_filter.must if query_filter else []) if getattr(c, "key", "") == "publish_ts"]
+        points = [
+            p for p in self.points
+            if all(r.gte <= p.payload["publish_ts"] < r.lt for r in ranges)
+        ]
+        return SimpleNamespace(points=points)
+
+
 def _point(score, payload):
     return SimpleNamespace(score=score, payload=payload)
 
@@ -643,6 +658,25 @@ class RagTimeAwareRankingTests(unittest.IsolatedAsyncioTestCase):
 
         self.assertEqual(result["items"], [])
         self.assertTrue(all(kw.get("query_filter") is not None for kw in fake.query_kwargs))
+
+    def _october_report(self):
+        return _point(0.7, {"news_id": 7, "title": "新闻联播 2010-11-12｜前10月财政收入", "chunk_text": "10月全国财政收入。",
+                            "publish_time": "2010-11-12 19:00:00", "source": "新闻联播",
+                            "publish_ts": int(datetime(2010, 11, 12, 19).timestamp())})
+
+    async def test_event_month_without_reports_inside_it_allows_later_reports(self):
+        fake = _WindowQdrant([self._october_report()])
+        result = await self._search_with("2010年10月全国财政收入同比增长多少？", fake)
+
+        self.assertTrue(result["date_window_extended"])
+        self.assertEqual([item["evidence_id"] for item in result["items"]], ["news:7"])
+
+    async def test_question_about_reports_in_a_month_keeps_the_exact_window(self):
+        fake = _WindowQdrant([self._october_report()])
+        result = await self._search_with("2010年10月有没有关于全国财政收入的报道？", fake)
+
+        self.assertFalse(result["date_window_extended"])
+        self.assertEqual(result["items"], [])
 
     async def test_question_without_explicit_month_has_no_date_filter(self):
         fake = _FakeQdrant([_point(0.7, {"news_id": "jjrb:1", "title": "服务业扩能提质", "chunk_text": "服务业。",
