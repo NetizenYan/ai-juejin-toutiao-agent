@@ -53,8 +53,9 @@ def build_answer_contract(
     requires_evidence = bool(is_news and settings.answer_contract_require_evidence_for_news)
     must_include_citations = bool(is_news and settings.answer_contract_require_citations_for_news)
 
-    if understanding.must_include_citations is not None:
-        must_include_citations = understanding.must_include_citations
+    # A user can ask for citations but cannot switch them off for news facts ("不要引用" / "把引用省掉").
+    if understanding.must_include_citations:
+        must_include_citations = True
 
     if intent == "general_chat":
         requires_evidence = False

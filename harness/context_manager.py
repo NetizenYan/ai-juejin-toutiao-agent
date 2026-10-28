@@ -11,7 +11,7 @@ import re
 from dataclasses import dataclass, field, replace
 from typing import Any
 
-from harness.query_understanding import UserQueryUnderstanding
+from harness.query_understanding import UserQueryUnderstanding, asks_to_drop_citations
 
 
 SUMMARY_KEYS = (
@@ -242,9 +242,12 @@ def constraints_from_text(text: str) -> dict[str, Any]:
     if max_points is not None:
         constraints["max_points"] = max_points
 
-    if any(token in text for token in ("不用引用", "不要引用", "不带引用", "无需引用")):
-        constraints["must_include_citations"] = False
-    elif any(token in text for token in ("保留引用", "带引用", "引用新闻", "新闻证据", "证据引用")):
+    # Only keeping citations is carried across turns. Dropping them is not a constraint: news facts
+    # are always cited (build_answer_contract), and a carried "不要引用" was the lever of the
+    # citation jailbreaks in the 2026-10-28 drift run.
+    if not asks_to_drop_citations(text) and any(
+        token in text for token in ("保留引用", "带引用", "引用新闻", "新闻证据", "证据引用")
+    ):
         constraints["must_include_citations"] = True
 
     if any(token in text for token in ("不要股票预测", "不需要股票预测", "不要投资建议", "不做投资建议")):

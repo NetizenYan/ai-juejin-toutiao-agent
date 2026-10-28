@@ -23,6 +23,21 @@ _CN_NUMBERS = {
     "十": 10,
 }
 
+_DROP_TARGET = r"(?:引用|出处|来源标注|标注来源)"
+_DROP_VERB = r"(?:省掉|省去|省略|去掉|去除|删掉|删除|拿掉)"
+# "不要引用" / "把这段的引用省掉" / "整屏都不带出处" / "without citations"; "不要去掉引用" keeps them.
+DROP_CITATION_RE = re.compile(
+    rf"(?:不用|不要|不带|无需|不需要|别带|别加)[^，。！？,.!?；;去删省拿]{{0,8}}?{_DROP_TARGET}"
+    rf"|(?<!不要)(?<!不)(?<!别)(?:免|{_DROP_VERB})[^，。！？,.!?；;]{{0,8}}?{_DROP_TARGET}"
+    rf"|(?:引用|出处)[^，。！？,.!?；;]{{0,4}}?(?<!不要)(?<!别)(?:{_DROP_VERB}|都不要|就不要了|免了)"
+    r"|(?:without|no|remove|drop|skip|strip)\s+(?:the\s+|any\s+|all\s+)?(?:citations?|sources?|references?)",
+    re.IGNORECASE,
+)
+
+
+def asks_to_drop_citations(text: str | None) -> bool:
+    return bool(DROP_CITATION_RE.search(text or ""))
+
 
 @dataclass(frozen=True)
 class UserQueryUnderstanding:
@@ -88,7 +103,7 @@ def understand_user_query(query: str) -> UserQueryUnderstanding:
         detail_level = "detail"
 
     must_include_citations = None
-    if any(token in q for token in ("不用引用", "不要引用", "不带引用", "无需引用")):
+    if asks_to_drop_citations(q):
         must_include_citations = False
     elif any(token in q for token in ("保留引用", "带新闻证据", "保留新闻证据", "带引用", "引用新闻", "证据引用")):
         must_include_citations = True

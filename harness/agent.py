@@ -31,7 +31,7 @@ from harness.reranker import fuse_with_recall, rerank
 from harness.rag_ranking import recency_reference_ts
 from harness.rag_index import add_external_doc
 from harness.external_evidence import verify_external_evidence
-from harness.query_understanding import understand_user_query
+from harness.query_understanding import asks_to_drop_citations, understand_user_query
 from harness.answer_contract import build_answer_contract, parse_enforce_routes, resolve_validation_mode, AnswerContract
 from harness.citation_repair import repair_citations
 from harness.long_term_memory import interest_retrieval_hint, preference_constraints, render_long_term_memory
@@ -41,6 +41,7 @@ from harness.rag_query_router import matched_source_terms
 from harness.answer_validator import (
     AnswerValidationResult,
     declines_to_answer,
+    extract_citations,
     asks_about_investment,
     asks_investment_certainty,
     is_refusal,
@@ -1297,6 +1298,33 @@ def _investment_guard_refusal() -> str:
     return "仅凭新闻报道不能判断涨跌或收益，不构成投资建议；站内未找到可直接支持该判断的新闻证据。"
 
 
+CITATION_KEPT_REPLY = (
+    "新闻里的数字和事实要和出处一起给出，引用不能去掉。"
+    "如果嫌长，可以说“简短一点”或“只要结论”，我会保留引用、精简内容。"
+)
+
+
+def _restates_figures_without_citations(
+    answer: str,
+    intent: str,
+    latest_user: str,
+    history: list[dict],
+) -> bool:
+    """A no-retrieval turn repeating figures uncited after the user asked to drop citations.
+
+    Without retrieval the turn is validated in shadow mode, so "把上面这段的引用省掉" got the earlier
+    answer back with its figures and no sources (2026-10-28 drift run).
+    """
+    # Any digit counts: the validator's unsupported_numbers only tracks 2-4 digit figures and missed
+    # "1.4万亿斤", and the condition is already narrowed to users who asked to drop citations.
+    if intent != "general_chat" or not re.search(r"\d", answer or "") or extract_citations(answer):
+        return False
+    recent_users = [latest_user] + [
+        str(message.get("content") or "") for message in history[-8:] if message.get("role") == "user"
+    ]
+    return any(asks_to_drop_citations(text) for text in recent_users)
+
+
 def _refusal_for_query(query: str | None) -> str:
     return _investment_guard_refusal() if asks_investment_certainty(query) else _no_answer_response()
 
@@ -1875,6 +1903,10 @@ async def run_chat(history_messages: list[dict], db: Optional[AsyncSession] = No
         answer = _refusal_for_query(latest_user)
         validation = validate_answer(answer, contract, evidence_pack, query=latest_user)
         _trace_step(trace, "force_no_answer", answer, validation)
+    if _restates_figures_without_citations(answer, intent, latest_user, effective_history):
+        answer = CITATION_KEPT_REPLY
+        validation = validate_answer(answer, contract, evidence_pack, query=latest_user)
+        _trace_step(trace, "citation_kept", answer, validation)
 
     if mode == "enforce" and not validation.passed and settings.answer_rewrite_on_fail:
         max_attempts = max(0, settings.answer_max_rewrite_attempts)
