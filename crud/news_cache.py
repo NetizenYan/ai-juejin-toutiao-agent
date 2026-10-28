@@ -31,8 +31,9 @@ async def get_news_list(db: AsyncSession, category_id: int, skip: int = 0, limit
     if cached_list:
         return cached_list
 
-    # 查询的是指定分类下的所有新闻
-    stmt = select(News).where(News.category_id == category_id).offset(skip).limit(limit)
+    # 查询的是指定分类下的所有新闻，最新的在前；id 作为同一时刻的稳定次序，保证分页不重不漏
+    stmt = (select(News).where(News.category_id == category_id)
+            .order_by(News.publish_time.desc(), News.id.desc()).offset(skip).limit(limit))
     result = await db.execute(stmt)
     news_list = result.scalars().all()
 

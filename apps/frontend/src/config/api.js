@@ -8,7 +8,8 @@
 // 配置方式：复制 .env.example 为 .env 并按需修改 VITE_API_BASE_URL。
 export const apiConfig = {
   // 后端API基础URL
-  baseURL: import.meta.env.VITE_API_BASE_URL || 'http://127.0.0.1:8030',
+  // 设为空字符串表示同源，请求交给 Vite 开发服务器的 /api 代理（见 vite.config.js）
+  baseURL: import.meta.env.VITE_API_BASE_URL ?? 'http://127.0.0.1:8030',
 }
 
 // AI 问答已改为走后端 Agent 网关（/api/ai/chat），

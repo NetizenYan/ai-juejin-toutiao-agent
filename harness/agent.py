@@ -1507,6 +1507,7 @@ async def _complete_with_fallback(
     try:
         return await asyncio.wait_for(client.complete(messages), timeout=max(0.001, timeout_seconds))
     except Exception as exc:  # noqa: BLE001 - keep SSE responsive when the local model is slow or unavailable.
+        logger.warning("answer LLM call failed, using evidence fallback: %r", exc)
         if trace is not None:
             trace.append({"stage": "llm_error", "error": type(exc).__name__})
         if contract.evidence_only:

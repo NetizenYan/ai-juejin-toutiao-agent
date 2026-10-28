@@ -12,7 +12,8 @@ RELATED_TTL_SECONDS = 1800
 
 def _news_list_key(category_id: int, page: int, page_size: int) -> str:
     # v2: list items are stored with API aliases (publishTime/categoryId); v1 entries used snake_case.
-    return f"news:list:v2:{category_id}:{page}:{page_size}"
+    # v3: lists are ordered newest first; v2 pages were in insertion order.
+    return f"news:list:v3:{category_id}:{page}:{page_size}"
 
 
 def _news_detail_key(news_id: int) -> str:

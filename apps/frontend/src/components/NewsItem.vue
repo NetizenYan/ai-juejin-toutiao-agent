@@ -5,12 +5,12 @@
       <p class="news-desc">{{ news.description }}</p>
       <div class="news-info">
         <span>{{ news.author }}</span>
-        <span>{{ news.publishTime }}</span>
+        <span>{{ formatDate(news.publishTime) }}</span>
         <span>{{ news.views }} 阅读</span>
       </div>
     </div>
-    <div class="news-image">
-      <img :src="news.image" :alt="news.title">
+    <div v-if="news.image" class="news-image">
+      <img :src="news.image" alt="">
     </div>
   </div>
 </template>
@@ -27,6 +27,9 @@ const props = defineProps({
 })
 
 const router = useRouter()
+
+// 列表只显示日期，后端给的是 2006-09-01T19:00:00
+const formatDate = (value) => (value ? String(value).slice(0, 10) : '')
 
 const goToDetail = () => {
   router.push(`/news/detail/${props.news.id}`)

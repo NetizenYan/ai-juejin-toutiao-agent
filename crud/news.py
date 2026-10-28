@@ -52,7 +52,9 @@ async def get_categories(db: AsyncSession, skip: int = 0, limit: int = 100):
 
 async def get_news_list(db: AsyncSession, category_id: int, skip: int = 0, limit: int = 10):
     # 查询的是指定分类下的所有新闻
-    stmt = select(News).where(News.category_id == category_id).offset(skip).limit(limit)
+    # 最新的在前；id 作为同一时刻的稳定次序，保证分页不重不漏
+    stmt = (select(News).where(News.category_id == category_id)
+            .order_by(News.publish_time.desc(), News.id.desc()).offset(skip).limit(limit))
     result = await db.execute(stmt)
     return result.scalars().all()
 
