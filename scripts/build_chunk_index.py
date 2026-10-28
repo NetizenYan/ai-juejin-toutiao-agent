@@ -5,12 +5,19 @@
 - payload 带 news_id/chunk_index/title/source/publish_ts/chunk_text，供聚合到 parent + 时间衰减。
 - point id = news_id * 1000 + chunk_index（唯一整数）。
 
-用法：<agent-python> -X utf8 -m scripts.build_chunk_index [--recreate]
+用法：<agent-python> -X utf8 -m scripts.build_chunk_index [--recreate] [--min-chunk N]
+
+--min-chunk N 只补 chunk_index >= N 的块（已有的块 id 和向量不变）。2026-10-28 前上限是 8 块
+（约前 3960 字），新闻联播整日文稿有 47% 的文字没进索引；补建用 --min-chunk 8。
+向量必须和已有块同源：已有块是本地 Ollama bge-m3 生成的，补建时
+EMBEDDING_BASE_URL=http://ollama:11434/v1 EMBEDDING_MODEL=bge-m3。
 """
 from __future__ import annotations
 
 import argparse
 import asyncio
+
+from openai import BadRequestError
 
 from qdrant_client.models import PointStruct, Distance, VectorParams
 from sqlalchemy import select
@@ -22,7 +29,9 @@ from models.news import News
 from harness.chunking import chunk_text
 
 BATCH = 64
-MAX_CHUNKS = 8
+# point id = news_id * 1000 + chunk_index, so a document may have at most 1000 chunks; the longest
+# transcript needs 46.
+MAX_CHUNKS = 64
 
 
 async def _embed(texts: list[str]) -> list[list[float]]:
@@ -30,7 +39,24 @@ async def _embed(texts: list[str]) -> list[list[float]]:
     return [d.embedding for d in resp.data]
 
 
-async def main(recreate: bool):
+async def _embed_each(texts: list[str]) -> list[list[float]]:
+    """One text at a time, halving any text the model rejects as too long. A few 新闻联播 chunks of
+    garbled source text tokenize past Ollama's context although they are only ~600 characters."""
+    vectors = []
+    for text in texts:
+        while True:
+            try:
+                vectors.extend(await _embed([text]))
+                break
+            except BadRequestError:
+                if len(text) <= 64:
+                    raise
+                text = text[: len(text) // 2]
+                print(f"  过长，截成 {len(text)} 字重试")
+    return vectors
+
+
+async def main(recreate: bool, min_chunk: int = 0, skip_existing: bool = False):
     emb = get_embedding_client()
     dim = len((await _embed(["维度探测"]))[0])
     qdrant = get_qdrant()
@@ -51,9 +77,18 @@ async def main(recreate: bool):
 
     async def flush():
         nonlocal total_chunks
+        if skip_existing and pending_points:
+            existing = {point.id for point in await qdrant.retrieve(
+                CHUNK_COLLECTION, ids=[p["id"] for p in pending_points], with_payload=False, with_vectors=False)}
+            kept = [(t, p) for t, p in zip(pending_texts, pending_points) if p["id"] not in existing]
+            pending_texts[:] = [t for t, _ in kept]
+            pending_points[:] = [p for _, p in kept]
         if not pending_texts:
             return
-        vectors = await _embed(pending_texts)
+        try:
+            vectors = await _embed(pending_texts)
+        except BadRequestError:
+            vectors = await _embed_each(pending_texts)
         points = [PointStruct(id=p["id"], vector=v, payload=p["payload"])
                   for p, v in zip(pending_points, vectors)]
         await qdrant.upsert(collection_name=CHUNK_COLLECTION, points=points)
@@ -67,6 +102,8 @@ async def main(recreate: bool):
         date_str = r.publish_time.strftime("%Y-%m-%d") if r.publish_time else ""
         ts = int(r.publish_time.timestamp()) if r.publish_time else 0
         for idx, ch in enumerate(chunks):
+            if idx < min_chunk:
+                continue
             embed_text = f"标题:{r.title}\n日期:{date_str}\n来源:{r.author or ''}\n{ch}"
             pending_texts.append(embed_text)
             pending_points.append({
@@ -88,5 +125,9 @@ async def main(recreate: bool):
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("--recreate", action="store_true")
+    parser.add_argument("--min-chunk", type=int, default=0, help="only embed chunks with this index or higher")
+    parser.add_argument("--skip-existing", action="store_true", help="do not re-embed chunks already in the collection")
     args = parser.parse_args()
-    asyncio.run(main(args.recreate))
+    if args.recreate and args.min_chunk:
+        parser.error("--recreate drops the collection; --min-chunk only makes sense without it")
+    asyncio.run(main(args.recreate, args.min_chunk, args.skip_existing))
