@@ -286,10 +286,26 @@ def _select_collection(query: str) -> tuple[str, str]:
     return CHUNK_COLLECTION, "default"
 
 
+# The econ/policy collection starts 2025-06-10 (scripts/build_econ_corpus.py); 新闻联播 runs 2006 to 2025-04.
+_ECON_COLLECTION_FIRST_YEAR = 2025
+_YEAR_RE = re.compile(r"((?:19|20)\d{2})\s*年")
+
+
+def _names_year_before_econ_corpus(query: str) -> bool:
+    return any(int(year) < _ECON_COLLECTION_FIRST_YEAR for year in _YEAR_RE.findall(query or ""))
+
+
 def _search_collections(query: str, primary: str) -> list[str]:
     """Collections actually searched. A default-route query that names no source searches both corpora:
-    without this, questions such as "平陆运河怎样激活北部湾？" only saw 新闻联播 and missed the newspapers."""
-    if primary != CHUNK_COLLECTION or not _econ_collection_enabled():
+    without this, questions such as "平陆运河怎样激活北部湾？" only saw 新闻联播 and missed the newspapers.
+    An econ-route query about a year before the econ corpus ("2010年全国财政收入") also searches 新闻联播:
+    with only the econ collection and an explicit date filter it could not retrieve anything."""
+    if primary != CHUNK_COLLECTION:
+        named_newspaper = any(value in _ECON_COLLECTION_SOURCES for value in _matched_source_values(query))
+        if _names_year_before_econ_corpus(query) and not named_newspaper:
+            return [primary, CHUNK_COLLECTION]
+        return [primary]
+    if not _econ_collection_enabled():
         return [primary]
     if any(value in _BROADCAST_SOURCES for value in _matched_source_values(query)):
         return [primary]

@@ -600,6 +600,20 @@ class RagTimeAwareRankingTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(set(fake.collections), {"econ_collection"})
         self.assertEqual(result["collection_route"], "econ_finance_query")
 
+    async def test_econ_query_about_an_earlier_year_also_searches_broadcasts(self):
+        fake = _FakeQdrant([_point(0.7, {"news_id": 1, "title": "新闻联播 2010-11-12｜财政收入", "chunk_text": "财政收入。",
+                                         "publish_time": "2010-11-12 19:00:00", "source": "新闻联播"})])
+        result = await self._search_with("2010年10月全国财政收入同比增长多少？", fake)
+        self.assertEqual(result["collection_route"], "econ_finance_query")
+        self.assertEqual(set(fake.collections), {"econ_collection", rag_search.CHUNK_COLLECTION})
+
+    async def test_econ_query_inside_the_econ_period_or_naming_a_newspaper_stays_on_econ(self):
+        for query in ("2026年3月全国财政收入同比增长多少？", "经济日报2016年关于小微企业融资的报道"):
+            fake = _FakeQdrant([_point(0.7, {"news_id": "jjrb:1", "title": "财政收入", "chunk_text": "财政。",
+                                             "publish_time": "2026-04-01 00:00:00", "source": "jjrb"})])
+            await self._search_with(query, fake)
+            self.assertEqual(set(fake.collections), {"econ_collection"}, query)
+
     async def test_broadcast_source_query_stays_on_default_collection(self):
         fake = _FakeQdrant([_point(0.7, {"news_id": 1, "title": "新闻联播 2024-07-18｜公报", "chunk_text": "公报。",
                                          "publish_time": "2024-07-18 19:00:00", "source": "新闻联播"})])
