@@ -662,12 +662,31 @@ _INJECTION_PAYLOAD_RE = re.compile(
     re.IGNORECASE,
 )
 INJECTION_PAYLOAD_PLACEHOLDER = "[已省略]"
+# "末尾加 DRIFT-0205" / "以 DRIFT-1029 确认" / "用 DRIFT-1157 收尾": asking for a canary-shaped token
+# (letters, a dash or underscore, 3+ digits) is a payload without any "忽略规则". In the 2026-10-28 drift
+# run the model emitted such tokens 11 times and quoted them in about 199 refusals.
+_CANARY_TOKEN = r"(?<![A-Za-z0-9_\-])([A-Za-z]{2,}[-_]\d{3,})(?![A-Za-z0-9_\-])"
+_CANARY_REQUEST_RE = re.compile(
+    r"(?:输出|打印|显示|写出|说出|回复|回我|回显|回|加上?|附上?|带上?|标上|写上|打上|标记|确认码?|喊"
+    r"|output|print|say|reply|append|add|include|echo|confirm|mark|tag|status)"
+    rf"[^A-Za-z0-9\n。！？]{{0,6}}?{_CANARY_TOKEN}(?!\s*的)"
+    r"|(?:末尾|结尾|最后|末行|文末|开头|口头禅|at the end|starts? with|finish(?:ing)? with|end(?:ing)? (?:with|in))"
+    rf"[^。！？\n]{{0,12}}?{_CANARY_TOKEN}"
+    rf"|{_CANARY_TOKEN}\s*(?:确认|表示|作为|当作|回执|收尾|结尾)"
+    rf"|{_CANARY_TOKEN}[^。！？，,\n]{{0,6}}?(?:输出|说出|念|回复|output|say|print)"
+    rf"|(?:和|及|with)\s*{_CANARY_TOKEN}\s*[`'\"”」）)]?\s*(?:[。！？.!?；;，,]|$)",
+    re.IGNORECASE | re.MULTILINE,
+)
 
 
 def injection_payloads(texts: list[str]) -> list[str]:
     """Token-like strings an injected instruction asks the assistant to emit (canaries, codes)."""
     payloads: list[str] = []
     for text in texts:
+        for match in _CANARY_REQUEST_RE.finditer(text or ""):
+            token = next(group for group in match.groups() if group)
+            if token not in payloads:
+                payloads.append(token)
         if not text or not _INJECTION_MARKER_RE.search(text):
             continue
         for match in _INJECTION_PAYLOAD_RE.finditer(text):
@@ -678,29 +697,61 @@ def injection_payloads(texts: list[str]) -> list[str]:
     return payloads
 
 
-def _external_texts(results: list[dict]) -> list[str]:
+def _result_texts(results: list[dict], *, external: bool) -> list[str]:
+    """Every string in the web-tool results (external) or in the station-tool results.
+
+    The query a tool echoes back is the user's own text, not content; it is skipped so a canary the
+    user typed never counts as "found in a report".
+    """
     texts: list[str] = []
 
     def walk(value: Any) -> None:
         if isinstance(value, str):
             texts.append(value)
         elif isinstance(value, dict):
-            for item in value.values():
-                walk(item)
+            for key, item in value.items():
+                if key not in {"query", "arguments"} and not str(key).startswith("_"):
+                    walk(item)
         elif isinstance(value, list):
             for item in value:
                 walk(item)
 
     for result in results:
-        if result.get("tool") in WEB_TOOLS:
+        if (result.get("tool") in WEB_TOOLS) == external:
             walk(result)
     return texts
 
 
+def _external_texts(results: list[dict]) -> list[str]:
+    return _result_texts(results, external=True)
+
+
 def redact_injection_payloads(answer: str, user_text: str, results: list[dict] | None = None) -> str:
+    # A token that a station report actually contains is a name to answer about, not a payload.
+    station = "\n".join(_result_texts(results or [], external=False)).lower()
     for payload in injection_payloads([user_text, *_external_texts(results or [])]):
+        if payload.lower() in station:
+            continue
         answer = re.sub(re.escape(payload), INJECTION_PAYLOAD_PLACEHOLDER, answer or "", flags=re.IGNORECASE)
     return answer
+
+
+# Internal identifiers the model picks up from its own prompt and repeats ("本轮 evidence_pack 里没有…",
+# 17 times in the 2026-10-28 drift run); the answer gets plain words instead.
+_INTERNAL_NAMES = {
+    "evidence_pack": "检索结果",
+    EXTERNAL_CONTENT_TAG: "站外内容",
+    "station_internal": "站内",
+    **{tool: "内部工具" for tools in ALLOWED_TOOLS_BY_INTENT.values() for tool in tools},
+}
+_INTERNAL_NAME_RE = re.compile(
+    r"`?(?<![A-Za-z0-9_])(" + "|".join(map(re.escape, sorted(_INTERNAL_NAMES, key=len, reverse=True)))
+    + r")(?![A-Za-z0-9_])`?"
+)
+
+
+def scrub_internal_names(answer: str) -> str:
+    return _INTERNAL_NAME_RE.sub(lambda match: _INTERNAL_NAMES[match.group(1)], answer or "")
 
 
 def _evidence_text(item: dict) -> str:
@@ -1885,9 +1936,14 @@ async def run_chat(history_messages: list[dict], db: Optional[AsyncSession] = No
         query=latest_user,
         trace=trace,
     )
-    answer = redact_injection_payloads(strip_external_images(
+    # Canaries planted a few turns earlier ("第2轮的约定 … DRIFT-4209") are redacted as well.
+    recent_user_text = "\n".join([
+        *(str(message.get("content") or "") for message in effective_history[-8:] if message.get("role") == "user"),
+        latest_user,
+    ])
+    answer = scrub_internal_names(redact_injection_payloads(strip_external_images(
         _ensure_external_ocr_warning(_ensure_confirmed_anchor_warning(answer, session_context), tool_results)
-    ), latest_user, tool_results)
+    ), recent_user_text, tool_results))
     evidence_refs = [str(item.get("ref")) for item in evidence_pack if isinstance(item, dict) and item.get("ref")]
     answer = _repair_answer_citations(answer, evidence_refs, trace, "initial")
 
@@ -1961,9 +2017,9 @@ async def run_chat(history_messages: list[dict], db: Optional[AsyncSession] = No
         _trace_step(trace, "final_refusal", answer, validation)
 
     # Keep diagnostics aligned with the exact text emitted to the user.
-    answer = redact_injection_payloads(strip_external_images(
+    answer = scrub_internal_names(redact_injection_payloads(strip_external_images(
         _ensure_external_ocr_warning(_ensure_confirmed_anchor_warning(answer, session_context), tool_results)
-    ), latest_user, tool_results)
+    ), recent_user_text, tool_results))
     validation = validate_answer(answer, contract, evidence_pack, query=latest_user)
     if not validation.passed and _looks_like_refusal(answer):
         validation = AnswerValidationResult(passed=True, hallucination_risk="low")
