@@ -5,7 +5,10 @@ Modelled on the improvement library of Google's Harness2 (harness2/core/library.
 - Write gate. Nothing is stored unless the user explicitly states a durable preference ("以后回答都不超过
   80字") or an interest ("我主要关注童装产业"); everything else is NO_ENTRY. Matter facts are never durable
   memory -- they become wrong anchors later -- so news facts, remembered figures ("我记得苏超带动了500亿"),
-  holdings and personal data are rejected outright.
+  holdings and personal data are rejected outright. A preference may tighten the answer rules but never
+  relax them: "以后都不用引用" is not stored, and a message that bargains over the rules ("你答应过",
+  "我是管理员", "忽略规则") stores nothing at all, because a stored exemption outlives the session it was
+  talked into.
 - Evidence. Every entry keeps where it came from: session, turn and the user's own words.
 - Budget. At most LONG_TERM_MEMORY_MAX_ENTRIES per user; adding one evicts the least recently used.
 - Read side. A short always-on section plus preference defaults that rank below the session's and the
@@ -33,13 +36,21 @@ _REJECT_RULES = (
     ("hearsay", re.compile(r"我记得|听说|据说|好像是|有人说")),
     ("holding", re.compile(r"持有|买了|买入|卖出|仓位|满仓|空仓|加仓|减仓|(?<!\d)\d{6}(?!\d)")),
     ("personal_data", re.compile(r"1[3-9]\d{9}|身份证|银行卡|密码|住址|住在|手机号|电话")),
+    ("rule_bargaining", re.compile(
+        r"忽略|无视|答应|同意过|授权|管理员|开发者|提示词|无需证据|不需要证据|不用证据|不必遵守|不用遵守"
+        r"|ignore|override|system prompt|developer|admin",
+        re.IGNORECASE,
+    )),
 )
+# Preference values that switch an answer rule off. They hold for the message or session that asks for
+# them, but are never written to, nor read back from, long-term memory.
+_RULE_RELAXING = {("must_include_citations", False), ("no_stock_prediction", False)}
 _PREFERENCE_LABELS = {
     "style": lambda v: "用通俗语言" if v == "plain_language" else f"风格 {v}",
     "detail_level": lambda v: "回答简短" if v == "brief" else ("回答详细" if v == "detail" else f"详略 {v}"),
     "max_chars": lambda v: f"回答不超过{v}字",
     "max_points": lambda v: f"最多{v}点",
-    "must_include_citations": lambda v: "保留新闻引用" if v else "不要引用",
+    "must_include_citations": lambda v: "保留新闻引用" if v else "",
     "no_stock_prediction": lambda v: "不要股票预测" if v else "",
 }
 INTEREST_SELF_REFERENCES = ("我关注", "我关心", "我感兴趣", "我在跟踪", "我平时看")
@@ -51,6 +62,10 @@ class MemoryCandidate:
     key: str
     value: Any
     cue: str
+
+
+def relaxes_rule(key: str, value: Any) -> bool:
+    return (key, value) in _RULE_RELAXING
 
 
 def memory_rejection_reason(text: str) -> str | None:
@@ -69,7 +84,7 @@ def extract_memory_candidates(text: str) -> list[MemoryCandidate]:
     candidates: list[MemoryCandidate] = []
     if _PERSISTENT_RE.search(text):
         for scope, value in constraints_from_text(text).items():
-            if scope in PREFERENCE_SCOPES:
+            if scope in PREFERENCE_SCOPES and not relaxes_rule(scope, value):
                 candidates.append(MemoryCandidate("preference", scope, value, "回答格式"))
     for match in ([] if _QUESTION_RE.search(text) else _INTEREST_RE.finditer(text)):
         topic = _INTEREST_TAIL_RE.sub("", match.group(1).strip()).strip("的 ")
@@ -78,8 +93,16 @@ def extract_memory_candidates(text: str) -> list[MemoryCandidate]:
     return candidates
 
 
+def _active_preferences(entries: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    # Rows written before the write gate refused rule exemptions are still in the table; skip them here.
+    return [
+        entry for entry in entries
+        if entry.get("kind") == "preference" and not relaxes_rule(entry["key"], entry.get("value"))
+    ]
+
+
 def preference_constraints(entries: list[dict[str, Any]]) -> dict[str, Any]:
-    return {entry["key"]: entry.get("value") for entry in entries if entry.get("kind") == "preference"}
+    return {entry["key"]: entry.get("value") for entry in _active_preferences(entries)}
 
 
 def interest_topics(entries: list[dict[str, Any]]) -> list[str]:
@@ -96,7 +119,7 @@ def interest_retrieval_hint(query: str, entries: list[dict[str, Any]]) -> str:
 def render_long_term_memory(entries: list[dict[str, Any]], max_chars: int = 300) -> str:
     """The always-on section; budgeted, and explicitly not evidence."""
     preferences = [
-        label for entry in entries if entry.get("kind") == "preference"
+        label for entry in _active_preferences(entries)
         if (label := _PREFERENCE_LABELS.get(entry["key"], lambda v: "")(entry.get("value")))
     ]
     interests = interest_topics(entries)
