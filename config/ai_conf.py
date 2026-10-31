@@ -215,6 +215,17 @@ class AISettings:
     # SearXNG 分类；加 news 会让偏向最新的新闻引擎排到前面，问历史事件时混进无关结果。
     web_search_categories: str = os.getenv("WEB_SEARCH_CATEGORIES", "general")
     web_search_api_key: str = os.getenv("WEB_SEARCH_API_KEY", "")
+    # 多后端按顺序尝试（openwebsearch,searxng,tavily），留空则只用上面 provider 选出的那一个。
+    web_search_backends: tuple[str, ...] = tuple(item.lower() for item in _csv("WEB_SEARCH_BACKENDS"))
+    # 本机 open-websearch daemon（open-websearch serve），默认只用百度。
+    open_websearch_url: str = os.getenv("OPEN_WEBSEARCH_URL", "").strip().rstrip("/")
+    open_websearch_engines: tuple[str, ...] = _csv("OPEN_WEBSEARCH_ENGINES") or ("baidu",)
+    # 切换策略：被拦后冷却（连续被拦翻倍，封顶）、同一后端最小调用间隔、成功结果缓存。
+    web_search_block_cooldown_seconds: int = _int("WEB_SEARCH_BLOCK_COOLDOWN_SECONDS", 600)
+    web_search_block_cooldown_max_seconds: int = _int("WEB_SEARCH_BLOCK_COOLDOWN_MAX_SECONDS", 21600)
+    web_search_min_interval_seconds: float = _float("WEB_SEARCH_MIN_INTERVAL_SECONDS", 2.0)
+    web_search_cache_ttl_seconds: int = _int("WEB_SEARCH_CACHE_TTL_SECONDS", 1800)
+    web_search_state_path: str = os.getenv("WEB_SEARCH_STATE_PATH", "work/web_search_state.json")
     # 聚合数据新闻 API（每天 50 次配额）
     juhe_api_key: str = os.getenv("JUHE_API_KEY", "")
     web_allowed_domains: tuple[str, ...] = _csv("WEB_ALLOWED_DOMAINS")
