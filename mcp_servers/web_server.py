@@ -3,13 +3,14 @@
 from __future__ import annotations
 
 from html.parser import HTMLParser
+from urllib.parse import urlsplit
 
 from mcp.server.fastmcp import FastMCP
 
 from config.ai_conf import settings
 from harness.external_evidence import ingest_url_via_ocr
 from harness.ocr_providers import create_ocr_provider
-from harness.safe_http_client import SafeHttpError, safe_fetch
+from harness.safe_http_client import SafeHttpError, _check_domain_policy, safe_fetch
 from harness.web_capture import create_web_screenshot_provider, source_name_from_url
 
 mcp = FastMCP("toutiao-web")
@@ -92,43 +93,98 @@ async def web_fetch(url: str) -> dict:
     }
 
 
+def _web_search_provider() -> str:
+    if settings.web_search_provider:
+        return settings.web_search_provider
+    if settings.web_search_base_url:
+        return "searxng"
+    return "tavily" if settings.web_search_api_key else ""
+
+
+def _host_allowed(url: str) -> bool:
+    host = urlsplit(url or "").hostname or ""
+    if not host:
+        return False
+    try:
+        _check_domain_policy(host, settings.web_allowed_domains_list, settings.web_blocked_domains_list)
+    except SafeHttpError:
+        return False
+    return True
+
+
+async def _search_searxng(client, query: str, limit: int) -> list[dict]:
+    # 自部署 SearXNG（配置里的固定端点，不是用户可控 URL，故直连）；需在其 settings.yml 打开 json 格式。
+    resp = await client.get(
+        f"{settings.web_search_base_url}/search",
+        params={"q": query, "format": "json", "language": settings.web_search_language, "safesearch": 1},
+    )
+    resp.raise_for_status()
+    return [
+        {
+            "title": r.get("title"),
+            "url": r.get("url"),
+            "summary": (r.get("content") or "")[:300],
+            "published": r.get("publishedDate"),
+            "engine": r.get("engine"),
+        }
+        for r in (resp.json().get("results") or [])
+    ]
+
+
+async def _search_tavily(client, query: str, limit: int) -> list[dict]:
+    # Tavily（固定可信端点；非用户可控 URL，故直连）。
+    resp = await client.post(
+        "https://api.tavily.com/search",
+        json={"api_key": settings.web_search_api_key, "query": query, "max_results": limit},
+    )
+    resp.raise_for_status()
+    return [
+        {"title": r.get("title"), "url": r.get("url"), "summary": (r.get("content") or "")[:300]}
+        for r in (resp.json().get("results") or [])
+    ]
+
+
+_SEARCH_PROVIDERS = {"searxng": _search_searxng, "tavily": _search_tavily}
+
+
 @mcp.tool()
 async def web_search(query: str, limit: int = 5) -> dict:
-    """联网搜索（需 WEB_SEARCH_API_KEY；未配置则优雅降级返回提示，不报错）。
+    """联网搜索：自部署 SearXNG（WEB_SEARCH_BASE_URL）或 Tavily（WEB_SEARCH_API_KEY）；未配置则优雅降级。
 
-    返回结果中的链接应再经 web_fetch（含安全护栏）抓取，不直接信任摘要。
+    结果只是站外候选：按 WEB_ALLOWED_DOMAINS / WEB_BLOCKED_DOMAINS 过滤，链接应再经 web_fetch 抓取，不直接信任摘要。
+    给模型看的 note / error 不带配置细节，排查信息放在以 _ 开头的字段里（不会进入回答过滤的文本）。
     """
     limit = max(1, min(int(limit), 10))
-    api_key = settings.web_search_api_key
-    if not api_key:
+    search = _SEARCH_PROVIDERS.get(_web_search_provider())
+    if search is None:
         return {
             "tool": "web_search",
             "items": [],
             "evidence_ids": [],
-            "note": "未配置 WEB_SEARCH_API_KEY，联网搜索暂不可用；在 .env 填入后启用（Tavily/Bocha）。",
+            "note": "联网搜索暂不可用。",
+            "_setup_hint": "设置 WEB_SEARCH_BASE_URL（SearXNG）或 WEB_SEARCH_API_KEY（Tavily）后启用。",
         }
 
-    # Tavily（固定可信端点；非用户可控 URL，故直连）。拿到 key 后即可用。
     import httpx
     try:
         async with httpx.AsyncClient(timeout=settings.tool_timeout_seconds) as client:
-            resp = await client.post(
-                "https://api.tavily.com/search",
-                json={"api_key": api_key, "query": query, "max_results": limit},
-            )
-            resp.raise_for_status()
-            data = resp.json()
+            raw = await search(client, query, limit)
     except Exception as exc:  # noqa: BLE001 - 搜索失败优雅降级
-        return {"tool": "web_search", "items": [], "evidence_ids": [], "error": str(exc)}
+        return {"tool": "web_search", "items": [], "evidence_ids": [], "error": "联网搜索暂时失败。", "_detail": str(exc)}
 
-    items = [
-        {"title": r.get("title"), "url": r.get("url"), "summary": (r.get("content") or "")[:300]}
-        for r in (data.get("results") or [])[:limit]
-    ]
+    items, seen = [], set()
+    for item in raw:
+        url = item.get("url") or ""
+        if url in seen or not _host_allowed(url):
+            continue
+        seen.add(url)
+        items.append(item)
+        if len(items) >= limit:
+            break
     return {
         "tool": "web_search",
         "items": items,
-        "evidence_ids": [f"web:{it['url']}" for it in items if it.get("url")],
+        "evidence_ids": [f"web:{it['url']}" for it in items],
     }
 
 

@@ -208,7 +208,10 @@ class AISettings:
     max_redirects: int = _int("MAX_REDIRECTS", 3)
     max_chunks_per_answer: int = _int("MAX_CHUNKS_PER_ANSWER", 8)
 
-    # 联网搜索
+    # 联网搜索：provider 留空时，配了 WEB_SEARCH_BASE_URL 用自部署 SearXNG，否则有 key 用 Tavily。
+    web_search_provider: str = os.getenv("WEB_SEARCH_PROVIDER", "").strip().lower()
+    web_search_base_url: str = os.getenv("WEB_SEARCH_BASE_URL", "").strip().rstrip("/")
+    web_search_language: str = os.getenv("WEB_SEARCH_LANGUAGE", "zh-CN")
     web_search_api_key: str = os.getenv("WEB_SEARCH_API_KEY", "")
     # 聚合数据新闻 API（每天 50 次配额）
     juhe_api_key: str = os.getenv("JUHE_API_KEY", "")
