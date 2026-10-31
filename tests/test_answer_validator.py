@@ -125,6 +125,28 @@ class AnswerValidatorTests(unittest.TestCase):
         self.assertFalse(result.passed)
         self.assertIn("evidence_not_support_query", result.constraint_violations)
 
+    def test_partial_answer_that_says_the_named_plan_was_not_found_is_kept(self):
+        answer = (
+            "“夏季经济刺激计划”的总规模，站内未找到可靠新闻证据。\n"
+            "- 报道提到该政策推动高质量发展 [news:jjrb:8dcc9e6349959132]。"
+        )
+
+        result = validate_answer(answer, self._contract(), self._evidence(),
+                                 query="印尼推出的“夏季经济刺激计划”总规模多少？")
+
+        self.assertNotIn("evidence_not_support_query", result.constraint_violations)
+
+    def test_naming_the_plan_as_fact_anywhere_still_fails(self):
+        answer = (
+            "“夏季经济刺激计划”的总规模站内未找到。\n"
+            "- “夏季经济刺激计划”已经全面落地 [news:jjrb:8dcc9e6349959132]。"
+        )
+
+        result = validate_answer(answer, self._contract(), self._evidence(),
+                                 query="印尼推出的“夏季经济刺激计划”总规模多少？")
+
+        self.assertIn("evidence_not_support_query", result.constraint_violations)
+
     def test_unquoted_named_plan_not_supported_by_evidence_fails_non_refusal(self):
         result = validate_answer(
             "相关报道显示蓝鲸计划2029已经落地。[news:jjrb:8dcc9e6349959132]",

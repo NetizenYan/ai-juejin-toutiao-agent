@@ -246,6 +246,17 @@ def _add_unique(items: list[str], value: str) -> None:
         items.append(value)
 
 
+_NOT_FOUND_RE = re.compile(
+    r"未找到|没有找到|没找到|未查到|查不到|未提及|没有提到|未提到|并未提及|没有提及|没有相关|不涉及|没有涉及|无法确认|未见"
+)
+
+
+def _only_disclaimed(term: str, answer: str) -> bool:
+    """The answer names the term only to say it was not found (a partial answer, not a claim)."""
+    sentences = [part for part in re.split(r"[。！？!?\n]+", answer or "") if term in part]
+    return bool(sentences) and all(_NOT_FOUND_RE.search(part) for part in sentences)
+
+
 def _unsupported_query_terms(query: str, evidence_text: str) -> list[str]:
     terms = re.findall(r"[“\"]([^”\"]{2,40})[”\"]", query or "")
     terms.extend(UNQUOTED_NAMED_TERM_RE.findall(query or ""))
@@ -319,7 +330,12 @@ def validate_answer(
     evidence_texts = _evidence_texts(evidence_pack)
     if query and not is_refusal:
         evidence_all_for_terms = "\n".join(evidence_texts)
-        if _unsupported_query_terms(query, evidence_all_for_terms):
+        # A named plan / policy the evidence never mentions is usually made up ("蓝鲸计划2029"). An answer
+        # that names it only to say it was not found, and answers the rest from the evidence, is kept:
+        # EXT2 ext_cx_002 lost a correct partial answer to a bare refusal because the reports used other
+        # words for "夏季经济刺激计划".
+        unsupported = _unsupported_query_terms(query, evidence_all_for_terms)
+        if unsupported and not all(_only_disclaimed(term, answer) for term in unsupported):
             _add_unique(violations, "evidence_not_support_query")
         has_guard = any(term in answer for term in INVESTMENT_GUARD_TERMS)
         if _asks_investment_certainty(query):
