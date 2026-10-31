@@ -224,6 +224,13 @@ class ProviderSelectionTests(unittest.TestCase):
 
         self.assertEqual([a["backend"] for a in result["_attempts"]], ["searxng"])
 
+    def test_backends_none_turns_web_search_off_for_evaluation(self):
+        settings = replace(BOTH, web_search_backends=("none",), web_search_api_key="k")
+
+        result = _search(settings, lambda m, u, b: self.fail("no request expected"))
+
+        self.assertEqual(result["note"], "联网搜索暂不可用。")
+
     def test_unconfigured_search_does_not_tell_the_model_about_keys(self):
         result = _search(BASE, lambda m, u, b: self.fail("no request expected"))
 
