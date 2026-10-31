@@ -21,7 +21,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from config.ai_conf import settings
 from crud import ai_agent
-from harness.intent import detect_intent, build_fallback_tool_calls
+from harness.intent import MAX_WEB_SEARCH_QUERY_CHARS, detect_intent, build_fallback_tool_calls
+from harness import web_fallback
 from harness.llm_client import LLMClient
 from harness.mcp_client import business_session, list_tool_defs, call_tool
 from harness.tool_registry import ToolPolicyError, validate_tool_arguments
@@ -1685,6 +1686,59 @@ def _record_validation(
         validation_sink["trace"] = trace
 
 
+def _web_fallback_enabled() -> bool:
+    return settings.web_fallback_enabled and tuple(settings.web_search_backends) != ("none",)
+
+
+def _web_fallback_query(latest_user: str, retrieval_user: str) -> str:
+    """A follow-up ("那它的产量呢") searches with the topic the context resolved; anything else as asked."""
+    query = retrieval_user if is_contextual_follow_up(clean_retrieval_query(latest_user)) else latest_user
+    return query.strip()[:MAX_WEB_SEARCH_QUERY_CHARS]
+
+
+async def _answer_from_web(
+    client: LLMClient,
+    history_messages: list[dict],
+    query: str,
+    refusal: str,
+    db: Optional[AsyncSession],
+    audit_message_id: Optional[int],
+    trace: list[dict],
+) -> tuple[str, list[dict], str]:
+    """(answer, web tool results, outcome) for a news question the station could not answer."""
+    calls = [{"name": "web_search", "arguments": {"query": query, "limit": 5}}]
+    try:
+        async with web_session() as session:
+            results = await _execute_calls(session, db, calls, audit_message_id)
+    except Exception as exc:  # noqa: BLE001 - the station refusal stands when the web is unreachable
+        logger.warning("web fallback search failed: %r", exc)
+        trace.append({"stage": "web_fallback", "outcome": "search_error", "error": type(exc).__name__})
+        return refusal, [], "search_error"
+    items = web_fallback.web_items(results)
+    draft = ""
+    if items:
+        messages = [
+            {"role": "system", "content": DEFAULT_SYSTEM_PROMPT},
+            {"role": "system", "content": web_fallback.fallback_instructions()},
+            {"role": "user", "content": _render_external_context(results)},
+            *history_messages,
+        ]
+        try:
+            draft = await asyncio.wait_for(client.complete(messages), timeout=max(0.001, settings.llm_timeout_seconds))
+        except Exception as exc:  # noqa: BLE001
+            trace.append({"stage": "web_fallback_llm_error", "error": type(exc).__name__})
+    answer, outcome = web_fallback.compose_answer(draft, refusal, items)
+    first = results[0] if results else {}
+    trace.append({
+        "stage": "web_fallback",
+        "outcome": outcome,
+        "backend": first.get("_backend"),
+        "items": len(items),
+        "violations": web_fallback.check_web_answer(draft, items) if outcome == "links_only" else [],
+    })
+    return answer, results, outcome
+
+
 async def run_chat(history_messages: list[dict], db: Optional[AsyncSession] = None,
                    audit_message_id: Optional[int] = None,
                    user_id: Optional[int] = None,
@@ -2016,12 +2070,39 @@ async def run_chat(history_messages: list[dict], db: Optional[AsyncSession] = No
         validation = validate_answer(answer, contract, [], query=latest_user)
         _trace_step(trace, "final_refusal", answer, validation)
 
+    web_outcome = ""
+    skip = web_fallback.skip_reason(
+        latest_user,
+        intent=intent,
+        enabled=_web_fallback_enabled(),
+        asks_investment_certainty=asks_investment_certainty(latest_user),
+        asks_to_drop_citations=asks_to_drop_citations(latest_user),
+        declines=declines_to_answer(answer),
+    )
+    if skip is None:
+        answer, web_results, web_outcome = await _answer_from_web(
+            client, effective_history, _web_fallback_query(latest_user, retrieval_user), answer,
+            db, audit_message_id, trace,
+        )
+        tool_results = [*tool_results, *web_results]
+        if evidence_sink is not None and web_outcome in {"answered", "links_only"}:
+            evidence_sink.extend(ref for ref in collect_evidence(web_results) if ref not in evidence_sink)
+    elif skip not in {"disabled", "intent", "answered"}:
+        trace.append({"stage": "web_fallback_skipped", "reason": skip})
+
     # Keep diagnostics aligned with the exact text emitted to the user.
     answer = scrub_internal_names(redact_injection_payloads(strip_external_images(
         _ensure_external_ocr_warning(_ensure_confirmed_anchor_warning(answer, session_context), tool_results)
     ), recent_user_text, tool_results))
     validation = validate_answer(answer, contract, evidence_pack, query=latest_user)
-    if not validation.passed and _looks_like_refusal(answer):
+    if web_outcome in {"answered", "links_only", "declined"}:
+        # Checked against the search results by web_fallback, not against the station evidence pack.
+        validation = AnswerValidationResult(
+            passed=True,
+            hallucination_risk="medium" if web_outcome == "answered" else "low",
+            risk_reasons=[f"web_fallback_{web_outcome}"],
+        )
+    elif not validation.passed and _looks_like_refusal(answer):
         validation = AnswerValidationResult(passed=True, hallucination_risk="low")
     _record_validation(validation_sink, validation, mode=mode, rewrite_count=rewrite_count, route=route, trace=trace)
     if validation_sink is not None and session_context is not None and settings.session_summary_enabled:

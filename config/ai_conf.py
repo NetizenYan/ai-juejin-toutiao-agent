@@ -226,6 +226,8 @@ class AISettings:
     web_search_min_interval_seconds: float = _float("WEB_SEARCH_MIN_INTERVAL_SECONDS", 2.0)
     web_search_cache_ttl_seconds: int = _int("WEB_SEARCH_CACHE_TTL_SECONDS", 1800)
     web_search_state_path: str = os.getenv("WEB_SEARCH_STATE_PATH", "work/web_search_state.json")
+    # 站内拒答的新闻问题再联网搜一次，结果标成未经核实的站外线索（WEB_SEARCH_BACKENDS=none 时不生效）。
+    web_fallback_enabled: bool = _bool("WEB_FALLBACK_ENABLED", False)
     # 聚合数据新闻 API（每天 50 次配额）
     juhe_api_key: str = os.getenv("JUHE_API_KEY", "")
     web_allowed_domains: tuple[str, ...] = _csv("WEB_ALLOWED_DOMAINS")
