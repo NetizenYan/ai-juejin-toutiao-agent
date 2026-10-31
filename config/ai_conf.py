@@ -212,6 +212,8 @@ class AISettings:
     web_search_provider: str = os.getenv("WEB_SEARCH_PROVIDER", "").strip().lower()
     web_search_base_url: str = os.getenv("WEB_SEARCH_BASE_URL", "").strip().rstrip("/")
     web_search_language: str = os.getenv("WEB_SEARCH_LANGUAGE", "zh-CN")
+    # SearXNG 分类；加 news 会让偏向最新的新闻引擎排到前面，问历史事件时混进无关结果。
+    web_search_categories: str = os.getenv("WEB_SEARCH_CATEGORIES", "general")
     web_search_api_key: str = os.getenv("WEB_SEARCH_API_KEY", "")
     # 聚合数据新闻 API（每天 50 次配额）
     juhe_api_key: str = os.getenv("JUHE_API_KEY", "")

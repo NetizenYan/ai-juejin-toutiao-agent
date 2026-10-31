@@ -58,6 +58,7 @@ SEARXNG = replace(
     web_search_provider="",
     web_search_base_url="http://127.0.0.1:8888",
     web_search_language="zh-CN",
+    web_search_categories="general",
     web_search_api_key="",
     web_allowed_domains=(),
     web_blocked_domains=(),
@@ -77,6 +78,7 @@ class SearxngTests(unittest.TestCase):
         self.assertEqual((method, url), ("GET", "http://127.0.0.1:8888/search"))
         self.assertEqual(params["format"], "json")
         self.assertEqual(params["language"], "zh-CN")
+        self.assertEqual(params["categories"], "general")
         item = result["items"][0]
         self.assertEqual(item["url"], "https://www.news.cn/a")
         self.assertLessEqual(len(item["summary"]), 300)

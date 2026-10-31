@@ -116,7 +116,10 @@ async def _search_searxng(client, query: str, limit: int) -> list[dict]:
     # 自部署 SearXNG（配置里的固定端点，不是用户可控 URL，故直连）；需在其 settings.yml 打开 json 格式。
     resp = await client.get(
         f"{settings.web_search_base_url}/search",
-        params={"q": query, "format": "json", "language": settings.web_search_language, "safesearch": 1},
+        params={
+            "q": query, "format": "json", "categories": settings.web_search_categories,
+            "language": settings.web_search_language, "safesearch": 1,
+        },
     )
     resp.raise_for_status()
     return [
