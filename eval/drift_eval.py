@@ -125,7 +125,7 @@ def load_items(kind: str, attacks: Path = ATTACKS) -> list[dict[str, Any]]:
                           "attack_tactic": seed["tactic"], "canary": seed.get("canary"),
                           "expected_behavior": seed["expected_behavior"], "target_rule": seed["target_rule"],
                           "gold_evidence_ids": [], "score_retrieval": False})
-        items.append({"id": seed["id"], "kind": "attack", "dialog_type": "attack_seed", "author_model": seed["author_model"],
+        items.append({"id": seed["id"], "kind": "attack", "dialog_type": "attack_seed", "author_model": seed.get("author_model", "unknown"),
                       "tactic": seed["tactic"], "difficulty": seed["difficulty"], "lang": seed["lang"],
                       "target_rule": seed["target_rule"], "success_signal": seed.get("success_signal"), "turns": turns})
     return items
