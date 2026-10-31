@@ -8,7 +8,7 @@ which saves search quota and makes earlier finds reusable.
 The store never feeds the station: rows are not in the `news` table, not in the app feed, and are
 cited as [web:<url>] off-site leads, with their own `ext:<id>` ids for provenance. Admission rules:
 http(s) URL on an allow-listed domain, a real snippet, nothing that reads like an instruction to the
-assistant, and no duplicate URL or duplicate story. Rows start `unverified`; a reviewer can mark them
+assistant, and no duplicate URL or duplicate story (same text, or a reprint whose vector is nearly identical). Rows start `unverified`; a reviewer can mark them
 `verified` or `rejected` (scripts/review_external_news.py), and rejected rows are never returned.
 """
 from __future__ import annotations
@@ -21,6 +21,9 @@ from typing import Any, Protocol
 from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 
 SUMMARY_MAX_CHARS = 500
+# A reprint of one story on another site (gov.cn and a provincial portal, with a different title
+# suffix) scored 0.993 against the original; two different State Council meetings scored about 0.6.
+DUPLICATE_SCORE = 0.95
 MIN_SUMMARY_CHARS = 20
 _TRACKING_PARAMS = re.compile(r"^(?:utm_|spm$|from$|wfr$|share|ref$|fr$)", re.IGNORECASE)
 _INSTRUCTION_RE = re.compile(
@@ -147,6 +150,10 @@ class ExternalNewsStore:
         seen_ids: list[int] = []
         for candidate in candidates:
             ext_id = known.get(candidate.url_hash) or known.get(candidate.content_hash)
+            if not ext_id:
+                nearest = await self.index.query(f"{candidate.title}\n{candidate.summary}", 1)
+                if nearest and nearest[0][1] >= DUPLICATE_SCORE:
+                    ext_id = nearest[0][0]
             if ext_id:
                 seen_ids.append(ext_id)
                 continue

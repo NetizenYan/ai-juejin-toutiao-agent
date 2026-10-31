@@ -105,6 +105,29 @@ class IngestSearchTests(unittest.TestCase):
         self.assertEqual(store.repo.touched, [1])
         self.assertEqual(store.repo.rows_by_id[1]["first_query"], "国常会 人工智能")
 
+    def test_a_reprint_with_another_title_is_the_same_story(self):
+        store = _store()
+        original = _item("https://www.gov.cn/a.htm", title="李强主持召开国务院常务会议 听取人工智能+行动进展情况汇报")
+        reprint = _item("https://xfb.beijing.gov.cn/b.htm",
+                        title="李强主持召开国务院常务会议 听取人工智能+行动进展情况汇报等_时政信息_北京市信访办公室")
+
+        asyncio.run(store.ingest([original], query="q", backend="b"))
+
+        async def nearest(text, limit, score=0.993):  # bge-m3 score measured for this pair
+            return [(1, score)]
+
+        store.index.query = nearest
+        stats = asyncio.run(store.ingest([reprint], query="q", backend="b"))
+        self.assertEqual((stats["new"], stats["seen"]), (0, 1))
+
+        async def another_meeting(text, limit):  # two different State Council meetings: about 0.6
+            return [(1, 0.605)]
+
+        store.index.query = another_meeting
+        other = _item("https://www.gov.cn/c.htm", title="国务院常务会议讨论通过重点工作分工方案",
+                      summary="2026年3月，国务院常务会议讨论通过《国务院2026年重点工作分工方案》，部署相关工作。")
+        self.assertEqual(asyncio.run(store.ingest([other], query="q", backend="b"))["new"], 1)
+
     def test_search_returns_close_rows_as_web_items_without_rejected_ones(self):
         store = _store()
         asyncio.run(store.ingest([
