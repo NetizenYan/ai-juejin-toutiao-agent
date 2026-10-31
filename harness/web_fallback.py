@@ -16,19 +16,13 @@ from __future__ import annotations
 
 import re
 
+from harness import rule_requests
+
 WEB_FALLBACK_HEADER = "站内没有找到可靠的新闻报道。以下是联网搜索到的站外线索，未经核实，仅供参考："
 WEB_DECLINE_SENTENCE = "联网搜索也没有找到能直接回答这个问题的可靠来源。"
 WEB_LINKS_INTRO = "联网搜索到几条可能相关的站外页面，未经核实，可自行查看："
 MAX_LINKS = 3
 
-_MANIPULATION_RE = re.compile(
-    r"系统提示|提示词|system\s*prompt|developer\s*message|隐藏的?(?:指令|规则|提示|设定|消息|章节)"
-    r"|内部(?:规则|配置|指令|工具|设定|格式)|忽略|无视|绕过|越狱|jailbreak|开发者模式|ignore\s+(?:all|previous|prior)"
-    r"|冒充|假装|扮演|(?:用|以)[^。！？\n]{0,10}(?:名义|身份)(?:发布|发|写|宣布|播)|本台(?:确认|消息)|正式发布"
-    r"|编造|虚构|捏造|伪造|杜撰|瞎编|make\s+up|fabricat"
-    r"|记住|长期(?:记忆|档案|偏好)|以后(?:都|每次|所有)|跨会话",
-    re.IGNORECASE,
-)
 _CANARY_RE = re.compile(r"(?<![A-Za-z0-9_\-])[A-Za-z]{2,}[-_]\d{3,}(?![A-Za-z0-9_\-])")
 _STATION_SCOPE_RE = re.compile(r"站内|本站|站里|库里|库中|数据库|你们(?:的)?(?:新闻|报道|资料)")
 _WEB_REF_RE = re.compile(r"\[web:([^\]\s]+)\]")
@@ -51,7 +45,7 @@ def skip_reason(query: str, *, intent: str, enabled: bool,
         return "too_short"
     if asks_investment_certainty:
         return "investment"
-    if asks_to_drop_citations or _MANIPULATION_RE.search(text) or _CANARY_RE.search(text):
+    if asks_to_drop_citations or rule_requests.classify(text) or _CANARY_RE.search(text):
         return "manipulation"
     if _STATION_SCOPE_RE.search(text):
         return "station_scope"
