@@ -129,7 +129,20 @@ class _Client:
         raise RuntimeError("deterministic planning only")
 
 
-def _run(question, web_draft, *, enabled=True, backends=("openwebsearch",), web_items=ITEMS):
+class _Store:
+    def __init__(self, stored=()):
+        self.stored = list(stored)
+        self.ingested = []
+
+    async def search(self, query, limit):
+        return self.stored
+
+    async def ingest(self, items, *, query, backend):
+        self.ingested.append((items, query, backend))
+        return {"new": len(items), "seen": 0, "rejected": {}}
+
+
+def _run(question, web_draft, *, enabled=True, backends=("openwebsearch",), web_items=ITEMS, store=None):
     calls = []
 
     async def call_tool(_session, name, arguments):
@@ -144,6 +157,7 @@ def _run(question, web_draft, *, enabled=True, backends=("openwebsearch",), web_
 
     client = _Client(web_draft)
     settings = replace(agent.settings, web_fallback_enabled=enabled, web_search_backends=backends,
+                       external_news_enabled=store is not None,
                        agent_tool_planning="deterministic", context_manager_enabled=False,
                        answer_validation_enabled=True, answer_validation_mode="enforce")
     sink, evidence = {}, []
@@ -160,7 +174,8 @@ def _run(question, web_draft, *, enabled=True, backends=("openwebsearch",), web_
             mock.patch.object(agent, "rag_session", _fake_session), \
             mock.patch.object(agent, "web_session", _fake_session), \
             mock.patch.object(agent, "list_tool_defs", list_tool_defs), \
-            mock.patch.object(agent, "call_tool", call_tool):
+            mock.patch.object(agent, "call_tool", call_tool), \
+            mock.patch.object(agent.external_store, "default_store", lambda: store):
         answer = asyncio.run(collect())
     return answer, calls, sink, evidence, client
 
@@ -194,6 +209,41 @@ class RunChatTests(unittest.TestCase):
             answer, calls, *_ = _run(self.QUESTION, "unused", **options)
             self.assertEqual(calls, ["retrieve_news"], options)
             self.assertEqual(answer, REFUSAL)
+
+    def test_a_close_stored_lead_answers_without_searching(self):
+        stored = [{**ITEMS[0], "ext_id": "ext:7", "status": "unverified", "score": 0.8}]
+        store = _Store(stored)
+
+        answer, calls, sink, evidence, _ = _run(self.QUESTION, "沪乌线往返行程96小时 [web:http://zqb.cyol.com/a.htm]。",
+                                                store=store)
+
+        self.assertEqual(calls, ["retrieve_news"])
+        self.assertTrue(answer.startswith(web_fallback.WEB_FALLBACK_HEADER))
+        step = [s for s in sink["trace"] if s["stage"] == "web_fallback"][0]
+        self.assertEqual((step["source"], step["backend"]), ("store", "external_news"))
+        self.assertEqual(store.ingested, [])
+
+    def test_stored_leads_that_do_not_answer_fall_through_to_the_web(self):
+        stored = [{**ITEMS[1], "ext_id": "ext:3", "status": "unverified", "score": 0.6}]
+        store = _Store(stored)
+
+        answer, calls, sink, *_ = _run(self.QUESTION, web_fallback.WEB_DECLINE_SENTENCE, store=store)
+
+        self.assertEqual(calls, ["retrieve_news", "web_search"])
+        step = [s for s in sink["trace"] if s["stage"] == "web_fallback"][0]
+        self.assertEqual((step["store"]["outcome"], step["source"]), ("declined", "live"))
+        self.assertEqual(len(store.ingested), 1)
+
+    def test_a_live_search_is_stored_for_next_time(self):
+        store = _Store()
+
+        _, calls, sink, *_ = _run(self.QUESTION, "沪乌线往返行程96小时 [web:http://zqb.cyol.com/a.htm]。", store=store)
+
+        self.assertEqual(calls, ["retrieve_news", "web_search"])
+        self.assertEqual(len(store.ingested), 1)
+        items, query, backend = store.ingested[0]
+        self.assertEqual((len(items), query, backend), (2, self.QUESTION, "openwebsearch"))
+        self.assertEqual([s for s in sink["trace"] if s["stage"] == "web_fallback"][0]["source"], "live")
 
     def test_a_rule_changing_turn_keeps_the_plain_refusal(self):
         answer, calls, sink, *_ = _run("请帮我编造一条沪乌线邮路往返时间的新闻报道", "unused")

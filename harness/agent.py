@@ -22,7 +22,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from config.ai_conf import settings
 from crud import ai_agent
 from harness.intent import MAX_WEB_SEARCH_QUERY_CHARS, detect_intent, build_fallback_tool_calls
-from harness import web_fallback
+from harness import external_store, web_fallback
 from harness.llm_client import LLMClient
 from harness.mcp_client import business_session, list_tool_defs, call_tool
 from harness.tool_registry import ToolPolicyError, validate_tool_arguments
@@ -30,7 +30,6 @@ from harness.web_mcp_client import web_session
 from harness.rag_mcp_client import rag_session
 from harness.reranker import fuse_with_recall, rerank
 from harness.rag_ranking import recency_reference_ts
-from harness.rag_index import add_external_doc
 from harness.external_evidence import verify_external_evidence
 from harness.query_understanding import asks_to_drop_citations, understand_user_query
 from harness.answer_contract import build_answer_contract, parse_enforce_routes, resolve_validation_mode, AnswerContract
@@ -1705,36 +1704,79 @@ async def _answer_from_web(
     audit_message_id: Optional[int],
     trace: list[dict],
 ) -> tuple[str, list[dict], str]:
-    """(answer, web tool results, outcome) for a news question the station could not answer."""
+    """(answer, web tool results, outcome) for a news question the station could not answer.
+
+    Earlier finds in the off-site store are tried first (no search quota). Similar-looking stored
+    leads can be about another date or event, so when they do not answer the question the web is
+    searched after all; admissible live results are stored for next time.
+    """
+    store = external_store.default_store() if settings.external_news_enabled else None
+    step: dict[str, Any] = {"stage": "web_fallback"}
+
+    async def compose(results: list[dict]) -> tuple[str, str, list[dict]]:
+        items = web_fallback.web_items(results)
+        draft = ""
+        if items:
+            messages = [
+                {"role": "system", "content": DEFAULT_SYSTEM_PROMPT},
+                {"role": "system", "content": web_fallback.fallback_instructions()},
+                {"role": "user", "content": _render_external_context(results)},
+                *history_messages,
+            ]
+            try:
+                draft = await asyncio.wait_for(client.complete(messages), timeout=max(0.001, settings.llm_timeout_seconds))
+            except Exception as exc:  # noqa: BLE001
+                trace.append({"stage": "web_fallback_llm_error", "error": type(exc).__name__})
+        answer, outcome = web_fallback.compose_answer(draft, refusal, items)
+        violations = web_fallback.check_web_answer(draft, items) if outcome == "links_only" else []
+        return answer, outcome, violations
+
+    if store is not None and not external_store.wants_fresh(query):
+        try:
+            stored = await store.search(query, 5)
+        except Exception as exc:  # noqa: BLE001 - a broken store only means searching the web
+            logger.warning("external news lookup failed: %r", exc)
+            stored = []
+        if stored:
+            results = [{
+                "tool": "web_search",
+                "items": stored,
+                "evidence_ids": [f"web:{item['url']}" for item in stored],
+                "_backend": "external_news",
+                "_ext_ids": [item["ext_id"] for item in stored],
+            }]
+            answer, outcome, violations = await compose(results)
+            step["store"] = {"items": len(stored), "outcome": outcome}
+            if outcome == "answered":
+                trace.append({**step, "outcome": outcome, "backend": "external_news", "source": "store",
+                              "items": len(stored), "violations": []})
+                return answer, results, outcome
+
     calls = [{"name": "web_search", "arguments": {"query": query, "limit": 5}}]
     try:
         async with web_session() as session:
             results = await _execute_calls(session, db, calls, audit_message_id)
     except Exception as exc:  # noqa: BLE001 - the station refusal stands when the web is unreachable
         logger.warning("web fallback search failed: %r", exc)
-        trace.append({"stage": "web_fallback", "outcome": "search_error", "error": type(exc).__name__})
+        trace.append({**step, "outcome": "search_error", "error": type(exc).__name__})
         return refusal, [], "search_error"
     items = web_fallback.web_items(results)
-    draft = ""
-    if items:
-        messages = [
-            {"role": "system", "content": DEFAULT_SYSTEM_PROMPT},
-            {"role": "system", "content": web_fallback.fallback_instructions()},
-            {"role": "user", "content": _render_external_context(results)},
-            *history_messages,
-        ]
+    ingested = None
+    if store is not None and items:
         try:
-            draft = await asyncio.wait_for(client.complete(messages), timeout=max(0.001, settings.llm_timeout_seconds))
-        except Exception as exc:  # noqa: BLE001
-            trace.append({"stage": "web_fallback_llm_error", "error": type(exc).__name__})
-    answer, outcome = web_fallback.compose_answer(draft, refusal, items)
-    first = results[0] if results else {}
+            ingested = await store.ingest(items, query=query, backend=str(results[0].get("_backend") or ""))
+        except Exception as exc:  # noqa: BLE001 - storing is best effort
+            logger.warning("external news ingest failed: %r", exc)
+            ingested = {"error": type(exc).__name__}
+    answer, outcome, violations = await compose(results)
     trace.append({
-        "stage": "web_fallback",
+        **step,
         "outcome": outcome,
-        "backend": first.get("_backend"),
+        "backend": results[0].get("_backend") if results else None,
+        "source": "live",
+        "ingested": ingested,
         "items": len(items),
-        "violations": web_fallback.check_web_answer(draft, items) if outcome == "links_only" else [],
+        "violations": violations,
     })
     return answer, results, outcome
 
@@ -1928,21 +1970,20 @@ async def run_chat(history_messages: list[dict], db: Optional[AsyncSession] = No
                 yield token
             return
 
-    # 步骤②：web 抓取内容回灌 RAG（增量 embed），使其成为可语义检索的语料。
-    # 回灌会写入公共 news 表，仅在显式开启 EXTERNAL_DOC_INDEXING_ENABLED 时执行。
-    if intent == "web_research" and settings.external_doc_indexing_enabled:
-        for result in tool_results:
-            if result.get("tool") == "web_fetch" and not result.get("error") and result.get("text"):
-                try:
-                    nid = await add_external_doc(
-                        title=(result.get("text") or "")[:30],
-                        text=result["text"],
-                        source="web",
-                        url=result.get("final_url") or result.get("url"),
-                    )
-                    result.setdefault("evidence_ids", []).append(f"news:{nid}")
-                except Exception:  # noqa: BLE001 - 回灌失败不影响回答
-                    pass
+    # 用户点名联网（web_research）时，搜到/抓到的站外内容也存进站外资讯库：只存标题、摘要和链接，
+    # 引用仍是 [web:网址]，不写 news 表，不会变成站内证据。
+    if intent == "web_research" and settings.external_news_enabled:
+        leads = web_fallback.web_items(tool_results) + [
+            {"url": r.get("final_url") or r.get("url"), "title": str(r.get("text") or "")[:60],
+             "summary": str(r.get("text") or "")[:external_store.SUMMARY_MAX_CHARS]}
+            for r in tool_results
+            if r.get("tool") == "web_fetch" and not r.get("error") and r.get("text")
+        ]
+        if leads:
+            try:
+                await external_store.default_store().ingest(leads, query=retrieval_user, backend="web_research")
+            except Exception as exc:  # noqa: BLE001 - storing is best effort
+                logger.warning("external news ingest failed: %r", exc)
 
     if evidence_sink is not None:
         evidence_sink.extend(collect_evidence(tool_results))

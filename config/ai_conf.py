@@ -228,6 +228,18 @@ class AISettings:
     web_search_state_path: str = os.getenv("WEB_SEARCH_STATE_PATH", "work/web_search_state.json")
     # 站内拒答的新闻问题再联网搜一次，结果标成未经核实的站外线索（WEB_SEARCH_BACKENDS=none 时不生效）。
     web_fallback_enabled: bool = _bool("WEB_FALLBACK_ENABLED", False)
+    # 站外资讯库：联网兜底搜到的白名单站点结果存成“标题+摘要+链接”（external_news 表 + 独立向量集合），
+    # 之后同类问题先查这里再联网。不进 news 表、不上首页、不算站内证据。
+    external_news_enabled: bool = _bool("EXTERNAL_NEWS_ENABLED", False)
+    external_news_collection: str = os.getenv("EXTERNAL_NEWS_COLLECTION", "toutiao_external_news")
+    external_news_allowed_domains: tuple[str, ...] = _csv("EXTERNAL_NEWS_ALLOWED_DOMAINS") or (
+        "gov.cn", "news.cn", "xinhuanet.com", "people.com.cn", "cctv.com", "cctv.cn", "cnr.cn",
+        "chinanews.com.cn", "chinanews.com", "ce.cn", "gmw.cn", "cyol.com", "youth.cn", "chinadaily.com.cn",
+        "china.com.cn", "cppcc.gov.cn", "thepaper.cn", "yicai.com", "caixin.com", "stcn.com", "cs.com.cn",
+        "jjckb.cn", "21jingji.com", "eeo.com.cn",
+    )
+    # bge-m3 余弦：同一事件换说法约 0.6，相关话题约 0.58，无关约 0.3（2026-10-31 实测）。
+    external_news_min_score: float = _float("EXTERNAL_NEWS_MIN_SCORE", 0.55)
     # 聚合数据新闻 API（每天 50 次配额）
     juhe_api_key: str = os.getenv("JUHE_API_KEY", "")
     web_allowed_domains: tuple[str, ...] = _csv("WEB_ALLOWED_DOMAINS")
