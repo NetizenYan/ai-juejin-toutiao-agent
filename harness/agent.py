@@ -2077,7 +2077,7 @@ async def run_chat(history_messages: list[dict], db: Optional[AsyncSession] = No
         enabled=_web_fallback_enabled(),
         asks_investment_certainty=asks_investment_certainty(latest_user),
         asks_to_drop_citations=asks_to_drop_citations(latest_user),
-        declines=declines_to_answer(answer),
+        declines=web_fallback.station_declined(answer, declines_to_answer(answer)),
     )
     if skip is None:
         answer, web_results, web_outcome = await _answer_from_web(

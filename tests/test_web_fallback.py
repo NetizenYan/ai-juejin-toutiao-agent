@@ -53,6 +53,17 @@ class TriggerTests(unittest.TestCase):
             self.assertIsNone(_skip(text), text)
 
 
+class StationDeclinedTests(unittest.TestCase):
+    def test_a_refusal_explained_with_station_citations_still_counts(self):
+        answer = "站内未找到可靠新闻证据，建议换个关键词再试。\n\n现有报道只涉及银行绿色金融债 [news:jjrb:1]，没有提到规模。"
+
+        self.assertTrue(web_fallback.station_declined(answer, declines=False))
+
+    def test_an_answer_with_facts_does_not(self):
+        self.assertFalse(web_fallback.station_declined("粮食产量目标为1.4万亿斤左右 [news:jjrb:1]。", declines=False))
+        self.assertFalse(web_fallback.station_declined("结论：目标不变。站内未找到更早的数据 [news:jjrb:1]。", declines=False))
+
+
 class CheckTests(unittest.TestCase):
     def test_a_draft_restating_the_snippets_passes(self):
         draft = "沪乌线往返行程96小时 [web:http://zqb.cyol.com/a.htm]。"

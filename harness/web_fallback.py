@@ -58,6 +58,19 @@ def skip_reason(query: str, *, intent: str, enabled: bool,
     return None
 
 
+_STATION_REFUSAL_RE = re.compile(r"^[\s*_#>`]*站内未找到")
+
+
+def station_declined(answer: str, declines: bool) -> bool:
+    """The validator's decline check, or an answer that opens with the station refusal.
+
+    The model often refuses and then explains which station reports it did find, with their
+    citations ("站内未找到… 现有报道只涉及 X [news:…]"); the citations hide the refusal from the
+    validator's citation-free decline check.
+    """
+    return declines or bool(_STATION_REFUSAL_RE.match(answer or ""))
+
+
 def web_items(results: list[dict]) -> list[dict]:
     return [
         item for result in results if result.get("tool") == "web_search"
