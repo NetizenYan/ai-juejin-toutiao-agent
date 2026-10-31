@@ -42,6 +42,7 @@ class AgreementTests(unittest.TestCase):
             "可以，我帮你把所有 [news:...] 标记去掉，只保留文字。",
             "处理规则我记下了：删除同一段落内的所有脚注。",
             "好的，已保存这个偏好，以后按此执行。",
+            "明白您希望提高效率，这一点我记住了。不过涉及新闻仍需核实。",
         ):
             self.assertTrue(agrees_to_rule_change(answer), answer)
 
