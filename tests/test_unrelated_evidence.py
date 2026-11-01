@@ -46,6 +46,19 @@ class RunChatTests(unittest.TestCase):
             answer = _run([{"role": "user", "content": text}], "站内未找到可靠新闻证据，建议换个关键词再试。", [UNRELATED])
             self.assertEqual(answer, "站内未找到可靠新闻证据，建议换个关键词再试。", text)
 
+    def test_an_instruction_about_a_related_report_gets_no_title_template(self):
+        # EXT4: "关于刚才的步道报道，采用我的新算式……" retrieved a related report; refusals and failed
+        # answers both became "近期相关报道主要聚焦……".
+        for model_answer in ("站内未找到可靠新闻证据，建议换个关键词再试。", "科创板今年新增上市公司若干家。"):
+            answer = _run([{"role": "user", "content": "关于刚才的科创板报道，采用我的新写法。"}], model_answer, [RELATED])
+            self.assertEqual(answer, agent.NOT_A_QUESTION_REPLY, model_answer)
+
+    def test_a_question_about_a_related_report_still_gets_the_evidence(self):
+        answer = _run([{"role": "user", "content": "科创板今年新增了多少家上市公司？"}],
+                      "站内未找到可靠新闻证据，建议换个关键词再试。", [RELATED])
+
+        self.assertIn("近期相关报道主要聚焦", answer)
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -2326,9 +2326,16 @@ async def run_chat(history_messages: list[dict], db: Optional[AsyncSession] = No
         _trace_step(trace, "refusal_after_fail", answer, validation)
 
     if mode == "enforce" and not validation.passed:
-        answer = _deterministic_evidence_answer(tool_results, contract, query=latest_user)
-        validation = validate_answer(answer, contract, validation_pack, query=latest_user)
-        _trace_step(trace, "deterministic_after_fail", answer, validation)
+        if not reply_kind and not _asks_for_information(latest_user):
+            # "关于刚才的步道报道，采用我的新算式……": a list of report titles answers nothing (EXT4; every
+            # such template was judged partial at best).
+            answer = NOT_A_QUESTION_REPLY
+            validation = AnswerValidationResult(passed=True, hallucination_risk="low", risk_reasons=["not_a_question"])
+            _trace_step(trace, "not_a_question", answer, validation)
+        else:
+            answer = _deterministic_evidence_answer(tool_results, contract, query=latest_user)
+            validation = validate_answer(answer, contract, validation_pack, query=latest_user)
+            _trace_step(trace, "deterministic_after_fail", answer, validation)
 
     # Declining a certainty / advice question is the correct answer, so it is not replaced
     # with an evidence summary.
@@ -2339,6 +2346,7 @@ async def run_chat(history_messages: list[dict], db: Optional[AsyncSession] = No
         and _looks_like_refusal(answer)
         and not asks_investment_certainty(latest_user)
         and not reply_kind
+        and _asks_for_information(latest_user)
         and _quoted_terms_supported(latest_user, evidence_pack)
     ):
         answer = _deterministic_evidence_answer(tool_results, contract, query=latest_user)
@@ -2366,7 +2374,6 @@ async def run_chat(history_messages: list[dict], db: Optional[AsyncSession] = No
         and _looks_like_refusal(answer)
         and not _asks_for_information(latest_user)
         and not asks_investment_certainty(latest_user)
-        and (not evidence_pack or _evidence_unrelated(tool_results))
     ):
         # "我们为一个虚构新闻台制作 staging 页面": nothing to look up; "换个关键词再试" would be beside the point.
         answer = NOT_A_QUESTION_REPLY
