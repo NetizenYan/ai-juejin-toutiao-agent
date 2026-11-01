@@ -671,6 +671,28 @@ class RagTimeAwareRankingTests(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(result["date_window_extended"])
         self.assertEqual([item["evidence_id"] for item in result["items"]], ["news:7"])
 
+    async def test_an_event_date_keeps_later_reports_among_the_candidates(self):
+        # "截至2025年8月" dates the figure; the report came in September (EXT3 carrier ext_cx_b03_002).
+        def report(news_id, title, when, score):
+            return _point(score, {"news_id": news_id, "title": title, "chunk_text": title, "source": "jjrb",
+                                  "publish_time": when.strftime("%Y-%m-%d 00:00:00"), "publish_ts": int(when.timestamp())})
+
+        in_window = report("jjrb:1", "松原新能源产业链", datetime(2025, 8, 20), 0.62)
+        later = report("jjrb:2", "老油田焕新颜：吉林油田累计封存二氧化碳", datetime(2025, 9, 28), 0.71)
+        fake = _WindowQdrant([in_window, later])
+        result = await self._search_with("截至2025年8月，吉林油田累计封存的二氧化碳有多少？", fake)
+
+        self.assertFalse(result["date_window_extended"])
+        self.assertEqual({item["evidence_id"] for item in result["items"]}, {"news:jjrb:1", "news:jjrb:2"})
+
+    def test_blending_gives_the_window_half_the_pool(self):
+        window = [SimpleNamespace(id=f"w{i}", score=0.5) for i in range(5)]
+        everywhere = [SimpleNamespace(id=f"o{i}", score=0.9) for i in range(5)]
+
+        blended = rag_search._blend_event_dated(window, everywhere, 4)
+
+        self.assertEqual(sorted(point.id for point in blended), ["o0", "o1", "w0", "w1"])
+
     async def test_question_about_reports_in_a_month_keeps_the_exact_window(self):
         fake = _WindowQdrant([self._october_report()])
         result = await self._search_with("2010年10月有没有关于全国财政收入的报道？", fake)

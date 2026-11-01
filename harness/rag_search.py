@@ -293,13 +293,44 @@ EVENT_REPORT_LAG_DAYS = 92
 _REPORT_WORDS_RE = re.compile(r"报道|新闻|文章|社论|评论员|发表|刊发|刊登|发过|播出|播发")
 
 
+# "2011年12月1日公布的上月PMI": a date right before 公布 / 发布 is when it was published, so it filters strictly.
+_PUBLISHED_ON_RE = re.compile(r"[年月日号](?:正式)?(?:公布|发布|宣布|公告|印发)")
+
+
 def _asks_for_reports_in_window(query: str) -> bool:
-    return bool(_REPORT_WORDS_RE.search(query or ""))
+    return bool(_REPORT_WORDS_RE.search(query or "") or _PUBLISHED_ON_RE.search(query or ""))
 
 
 # The econ/policy collection starts 2025-06-10 (scripts/build_econ_corpus.py); 新闻联播 runs 2006 to 2025-04.
 _ECON_COLLECTION_FIRST_YEAR = 2025
 _YEAR_RE = re.compile(r"((?:19|20)\d{2})\s*年")
+
+
+def _blend_event_dated(in_window: list[Any], unfiltered: list[Any], limit: int) -> list[Any]:
+    """Half the candidates from inside the date window, the rest from all dates, in score order.
+
+    "截至2025年8月，吉林油田累计封存…", "2001年10月3日神舟三号为何推迟发射": the date is when the event
+    happened, and the report came weeks or years later (2025-09, 2016-04). Filtering on it lost 10 of the
+    60 questions in the EXT3 carrier pool. The window still decides half the pool, so a question about
+    one month's meeting keeps that month's reports among the candidates.
+    """
+    picked: list[Any] = []
+    seen: set[Any] = set()
+
+    def take(points: list[Any], count: int) -> None:
+        for point in points:
+            if len(picked) >= count:
+                return
+            key = getattr(point, "id", None) or id(point)
+            if key not in seen:
+                seen.add(key)
+                picked.append(point)
+
+    take(in_window, max(1, limit // 2))
+    take(unfiltered, limit)
+    take(in_window, limit)
+    picked.sort(key=lambda point: float(getattr(point, "score", 0.0) or 0.0), reverse=True)
+    return picked
 
 
 def _names_year_before_econ_corpus(query: str) -> bool:
@@ -498,6 +529,12 @@ async def search_news_rag(
         summary_points, filter_fallback_used = await _query_collections(
             qdrant, vector, candidate_limit, effective_chunk_type_filter, collections, source_values, date_window
         )
+    event_dated = bool(date_window) and not _asks_for_reports_in_window(query)
+    if event_dated:
+        open_points, _ = await _query_collections(
+            qdrant, vector, candidate_limit, effective_chunk_type_filter, collections, source_values, None
+        )
+        summary_points = _blend_event_dated(summary_points, open_points, candidate_limit)
     summary_items = _points_to_items(summary_points)
     summary_items, time_aware_ranking = _rerank_items(query, summary_items, effective_ranking, route, now_ts)
     summary_items, summary_low_quality_filtered = _filter_severe_low_quality(summary_items, final_limit)
@@ -513,6 +550,9 @@ async def search_news_rag(
         body_points, _body_filter_fallback = await _query_collections(
             qdrant, vector, candidate_limit, "body", collections, source_values, date_window
         )
+        if event_dated:
+            open_body, _ = await _query_collections(qdrant, vector, candidate_limit, "body", collections, source_values, None)
+            body_points = _blend_event_dated(body_points, open_body, candidate_limit)
         body_items = _points_to_items(body_points)
         body_items, _body_time_aware = _rerank_items(query, body_items, effective_ranking, route, now_ts)
         body_items, body_low_quality_filtered = _filter_severe_low_quality(body_items, effective_body_slots)
