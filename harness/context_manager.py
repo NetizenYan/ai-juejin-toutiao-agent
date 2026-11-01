@@ -978,9 +978,28 @@ def apply_context_constraints(
     )
 
 
+_CONVERSATION_MARKERS = ("刚才", "上面", "前面", "上一轮")
+_SELF_CONTAINED_HEAD_CHARS = 12
+
+
 def is_contextual_follow_up(query: str) -> bool:
+    """A message that refers back to the conversation ("那它的产量呢", "刚才那条").
+
+    A pronoun after a complete first question refers to that question's own subject
+    ("十五运会主火炬的“源火”采自哪里？它使用的是什么燃料？"); merging the previous topic into
+    such a query retrieved the previous turn's reports instead (EXT4).
+    """
     text = (query or "").strip()
     if not text:
+        return False
+    if any(marker in text for marker in _CONVERSATION_MARKERS):
+        return True
+    head, sep, _ = text.partition("？") if "？" in text else text.partition("?")
+    if (
+        sep
+        and not any(marker in head for marker in _FOLLOW_UP_MARKERS)
+        and len(re.sub(r"[\W_]+", "", head)) >= _SELF_CONTAINED_HEAD_CHARS
+    ):
         return False
     return any(marker in text for marker in _FOLLOW_UP_MARKERS)
 

@@ -674,5 +674,19 @@ class ContextManagerTests(unittest.TestCase):
         self.assertEqual(cm.strip_turn_reference(mid["cue"]), "我想了解童装产业怎么提升品牌力。")
 
 
+class FollowUpDetectionTests(unittest.TestCase):
+    def test_pronouns_after_a_complete_first_question_are_not_follow_ups(self):
+        for text in (
+            "十五运会主火炬“绽放”的“源火”采自哪里？它使用的是什么燃料？",
+            "国务院常务会议讨论了哪些议题？这对普通人有什么影响？",
+        ):
+            self.assertFalse(cm.is_contextual_follow_up(text), text)
+
+    def test_messages_that_point_back_are_follow_ups(self):
+        for text in ("那它的产量呢？", "这个政策什么时候实施？", "刚才那篇报道说了什么？产量是多少？",
+                     "上面提到的企业去年营收多少？"):
+            self.assertTrue(cm.is_contextual_follow_up(text), text)
+
+
 if __name__ == "__main__":
     unittest.main()
