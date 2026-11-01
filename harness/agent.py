@@ -45,6 +45,7 @@ from harness.answer_validator import (
     asks_about_investment,
     asks_investment_certainty,
     is_refusal,
+    quoted_term_supported,
     validate_answer,
 )
 from harness.agent_orchestrator import build_agent_orchestration_plan
@@ -1585,7 +1586,7 @@ def _quoted_terms_supported(query: str, evidence_pack: list[dict]) -> bool:
         for item in evidence_pack
         for key in ("title", "summary", "snippet")
     )
-    return all(term in evidence_text for term in quoted_terms)
+    return all(quoted_term_supported(term, evidence_text) for term in quoted_terms)
 
 
 # Best cross-encoder score below which the retrieved reports are not about the message. Measured

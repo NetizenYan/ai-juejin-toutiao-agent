@@ -241,6 +241,24 @@ def _numbers(text: str) -> set[str]:
     return set(NUMBER_RE.findall(text or ""))
 
 
+_MAGNITUDE_RE = re.compile(r"(\d+(?:\.\d+)?)\s*(万亿|千亿|百亿|亿|千万|百万|万)")
+
+
+def _magnitude_mismatches(answer: str, supported_text: str) -> list[str]:
+    """Figures the evidence gives under another magnitude only.
+
+    The digits alone match, so the number check passes "3.35亿吨（约3.35万亿公斤）" against evidence
+    saying 3.35亿吨 (EXT4, the one fabrication the judge found: ten times too large).
+    """
+    reported: dict[str, set[str]] = {}
+    for number, unit in _MAGNITUDE_RE.findall(supported_text or ""):
+        reported.setdefault(number, set()).add(unit)
+    return sorted({
+        number + unit for number, unit in _MAGNITUDE_RE.findall(answer or "")
+        if number in reported and unit not in reported[number]
+    })
+
+
 def _add_unique(items: list[str], value: str) -> None:
     if value not in items:
         items.append(value)
@@ -257,11 +275,29 @@ def _only_disclaimed(term: str, answer: str) -> bool:
     return bool(sentences) and all(_NOT_FOUND_RE.search(part) for part in sentences)
 
 
+def quoted_term_supported(term: str, evidence_text: str) -> bool:
+    """A quoted name the evidence uses, possibly without a qualifier the asker added.
+
+    "夏季经济刺激计划" is reported as "经济刺激计划" (EXT2/EXT4: a correct partial answer became a bare
+    refusal). Two thirds of the term, at least 4 characters in a row, must appear; a short term must
+    appear whole.
+    """
+    if term in evidence_text:
+        return True
+    need = max(4, -(-2 * len(term) // 3))
+    if len(term) <= need:
+        return False
+    return any(term[i:i + need] in evidence_text for i in range(len(term) - need + 1))
+
+
 def _unsupported_query_terms(query: str, evidence_text: str) -> list[str]:
-    terms = re.findall(r"[“\"]([^”\"]{2,40})[”\"]", query or "")
-    terms.extend(UNQUOTED_NAMED_TERM_RE.findall(query or ""))
+    quoted = re.findall(r"[“\"]([^”\"]{2,40})[”\"]", query or "")
+    named = UNQUOTED_NAMED_TERM_RE.findall(query or "")  # "蓝鲸计划2029": must appear whole
     unsupported: list[str] = []
-    for term in terms:
+    for term in quoted:
+        if term and not quoted_term_supported(term, evidence_text) and term not in unsupported:
+            unsupported.append(term)
+    for term in named:
         if term and term not in evidence_text and term not in unsupported:
             unsupported.append(term)
     return unsupported
@@ -353,7 +389,10 @@ def validate_answer(
     supported_text = "\n".join(
         evidence_texts + [str(item.get("publish_time") or "") for item in evidence_pack if isinstance(item, dict)] + [query or ""]
     )
-    unsupported_numbers = sorted(_numbers(CITATION_RE.sub("", answer)) - _numbers(supported_text))
+    claimed = CITATION_RE.sub("", answer)
+    unsupported_numbers = sorted(
+        (_numbers(claimed) - _numbers(supported_text)) | set(_magnitude_mismatches(claimed, supported_text))
+    )
     if unsupported_numbers:
         _add_unique(warnings, "possible_unsupported_number_or_date")
         _add_unique(risk_reasons, "possible_unsupported_number_or_date")

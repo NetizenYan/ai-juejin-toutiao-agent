@@ -6,6 +6,7 @@ from harness.answer_validator import (
     declines_to_answer,
     extract_citations,
     is_refusal,
+    quoted_term_supported,
     validate_answer,
 )
 
@@ -293,6 +294,48 @@ class AnswerValidatorTests(unittest.TestCase):
         )
 
         self.assertTrue(result.passed, result.constraint_violations)
+
+
+def _plain_contract():
+    return AnswerContract(
+        style="plain_language", detail_level="brief", max_points=3, max_chars=None,
+        must_include_citations=True, citation_style="[news:ID]", evidence_only=True, requires_evidence=True,
+        allow_background=True, background_policy="one_sentence_plain_explanation",
+        no_answer_policy="refuse_with_suggestion",
+    )
+
+
+class QuotedTermTests(unittest.TestCase):
+    def test_a_quoted_name_reported_without_the_askers_qualifier_is_supported(self):
+        evidence = [{"ref": "news:jjrb:1", "title": "印尼推出经济刺激计划改善预期",
+                     "snippet": "计划为7930万户家庭提供50%的电费折扣。"}]
+
+        result = validate_answer("这项经济刺激计划为7930万户家庭提供50%的电费折扣 [news:jjrb:1]。", _plain_contract(),
+                                 evidence, query="印尼“夏季经济刺激计划”惠及多少户家庭？")
+
+        self.assertNotIn("evidence_not_support_query", result.constraint_violations)
+
+    def test_a_name_sharing_only_a_short_part_with_the_evidence_is_not(self):
+        self.assertFalse(quoted_term_supported("蓝鲸计划", "鲸计划"))
+        self.assertFalse(quoted_term_supported("云杉智能农机挑战赛", "智能农机补贴政策出台"))
+        self.assertTrue(quoted_term_supported("夏季经济刺激计划", "印尼推出经济刺激计划"))
+
+
+class MagnitudeTests(unittest.TestCase):
+    def test_a_figure_under_another_magnitude_is_unsupported(self):
+        evidence = [{"ref": "news:jjrb:1", "title": "水果产业", "snippet": "2024年我国水果总产量为3.35亿吨。"}]
+
+        result = validate_answer("2024年水果总产量3.35亿吨（约3.35万亿公斤）[news:jjrb:1]。", _plain_contract(), evidence)
+
+        self.assertIn("3.35万亿", result.unsupported_numbers)
+        self.assertFalse(result.passed)
+
+    def test_the_reported_magnitude_passes(self):
+        evidence = [{"ref": "news:jjrb:1", "title": "水果产业", "snippet": "2024年我国水果总产量为3.35亿吨。"}]
+
+        result = validate_answer("2024年水果总产量为3.35亿吨 [news:jjrb:1]。", _plain_contract(), evidence)
+
+        self.assertEqual(result.unsupported_numbers, [])
 
 
 if __name__ == "__main__":
