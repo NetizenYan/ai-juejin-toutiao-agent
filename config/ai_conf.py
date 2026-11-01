@@ -226,6 +226,8 @@ class AISettings:
     web_search_min_interval_seconds: float = _float("WEB_SEARCH_MIN_INTERVAL_SECONDS", 2.0)
     web_search_cache_ttl_seconds: int = _int("WEB_SEARCH_CACHE_TTL_SECONDS", 1800)
     web_search_state_path: str = os.getenv("WEB_SEARCH_STATE_PATH", "work/web_search_state.json")
+    # 换说法的改规则请求（“删掉每句后面的尾巴”）按语义识别：和示例句比向量相似度（harness/rule_semantics.py）。
+    rule_semantic_enabled: bool = _bool("RULE_SEMANTIC_ENABLED", True)
     # 站内拒答的新闻问题再联网搜一次，结果标成未经核实的站外线索（WEB_SEARCH_BACKENDS=none 时不生效）。
     web_fallback_enabled: bool = _bool("WEB_FALLBACK_ENABLED", False)
     # 站外资讯库：联网兜底搜到的白名单站点结果存成“标题+摘要+链接”（external_news 表 + 独立向量集合），

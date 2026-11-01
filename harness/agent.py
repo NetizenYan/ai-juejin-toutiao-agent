@@ -22,7 +22,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from config.ai_conf import settings
 from crud import ai_agent
 from harness.intent import MAX_WEB_SEARCH_QUERY_CHARS, detect_intent, build_fallback_tool_calls
-from harness import external_store, recite, rule_requests, web_fallback
+from harness import external_store, recite, rule_requests, rule_semantics, web_fallback
 from harness.llm_client import LLMClient
 from harness.mcp_client import business_session, list_tool_defs, call_tool
 from harness.tool_registry import ToolPolicyError, validate_tool_arguments
@@ -1735,6 +1735,27 @@ def _rule_request_kind(text: str) -> str | None:
     return kind
 
 
+async def _rule_request_kinds(latest_user: str, history: list[dict]) -> tuple[str | None, str | None]:
+    """(kind of this message's rule request, kind of the latest one among earlier user messages).
+
+    Keyword patterns first; messages they miss are compared by meaning in one embedding call.
+    """
+    earlier = [str(m.get("content") or "") for m in reversed(history[-16:]) if m.get("role") == "user"]
+    if earlier and earlier[0] == latest_user:
+        earlier = earlier[1:]  # history ends with the latest message
+    texts = [latest_user, *earlier]
+    kinds = [_rule_request_kind(text) for text in texts]
+    missed = [index for index, kind in enumerate(kinds) if kind is None and _worth_semantic_check(texts[index])]
+    if settings.rule_semantic_enabled and missed:
+        for index, kind in zip(missed, await rule_semantics.classify_many([texts[index] for index in missed])):
+            kinds[index] = kind
+    return kinds[0], next((kind for kind in kinds[1:] if kind), None)
+
+
+def _worth_semantic_check(text: str) -> bool:
+    return len((text or "").strip()) >= 6
+
+
 def _rule_reply(kind: str, answer: str, intent: str) -> str:
     """Why the request is declined and what can be done instead, in place of a bare refusal or template.
 
@@ -1965,13 +1986,7 @@ async def run_chat(history_messages: list[dict], db: Optional[AsyncSession] = No
 
     client = LLMClient()
     intent = detect_intent(retrieval_user)
-    rule_kind = _rule_request_kind(latest_user)
-    context_rule_kind = next((
-        kind for kind in (
-            _rule_request_kind(str(m.get("content") or ""))
-            for m in reversed(history_messages[-16:]) if m.get("role") == "user"
-        ) if kind
-    ), None)
+    rule_kind, context_rule_kind = await _rule_request_kinds(latest_user, history_messages)
     allowed = ALLOWED_TOOLS_BY_INTENT.get(intent, set())
 
     tool_results: list[dict] = []
