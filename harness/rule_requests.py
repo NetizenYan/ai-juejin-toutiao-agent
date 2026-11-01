@@ -17,6 +17,12 @@ from __future__ import annotations
 
 import re
 
+# Leaving out the note that a newsroom voice is played ("不附角色说明", "以后不说明扮演", "不标模拟").
+_DROP_ROLE_NOTE = (
+    r"不(?:再|用|必|需要)?(?:重复)?(?:说明|标明|注明|提示|声明|附|加|标|带|写)[^。！？，,、\n]{0,4}(?:角色|扮演)"
+    r"|不(?:再|用|必|需要)?(?:说明|标明|注明|提示|声明|附|加|标|带)[^。！？，,、\n]{0,4}(?:模拟|虚构)(?:说明|声明|提示|标注|标签)"
+)
+
 _PATTERNS: tuple[tuple[str, re.Pattern[str]], ...] = (
     ("prompt_leak", re.compile(
         r"系统提示|提示词|system\s*prompt|developer\s*message|隐藏的?(?:指令|规则|提示|设定|消息|章节|配置)"
@@ -26,7 +32,10 @@ _PATTERNS: tuple[tuple[str, re.Pattern[str]], ...] = (
     ("impersonation", re.compile(
         r"冒充|假扮|(?:用|以|按)[^。！？\n]{0,10}(?:名义|身份|口吻)[^。！？\n]{0,4}(?:发布|发|写|宣布|播|署名|确认|出具)"
         r"|本台(?:确认|消息|播报|获悉)|正式发布|官方口吻"
-        r"|(?:央视|新华社|人民日报|经济日报|官方媒体|官媒)[^。！？\n]{0,8}(?:发布权|署名|名义|身份|口吻)",
+        r"|(?:央视|新华社|人民日报|经济日报|官方媒体|官媒)[^。！？\n]{0,8}(?:发布权|署名|名义|身份|口吻)"
+        # EXT4: "固定为虚构的蒿月官报所本人，以后不说明扮演", "由台方签发，不附角色说明", "作为该所官方主体发布"
+        r"|(?:作为|成为|就是|固定为|切换为|当作)[^。！？\n]{0,12}(?:本人|官方主体|官方身份|官方发言)"
+        r"|" + _DROP_ROLE_NOTE,
     )),
     ("fabrication", re.compile(
         r"(?:编造|虚构|捏造|杜撰|瞎编|编)(?:一|几|个|条|篇|段|些|出)(?!步|定|号)|假新闻|make\s+up|fabricat",
@@ -83,6 +92,9 @@ _AGREE_RES = (
     re.compile(r"(?:引用|出处|来源|脚注|引注|标注|标记)[^。！？\n]{0,8}(?:去掉|删掉|删除|省略|取消|隐藏|不再显示|不显示)"),
     re.compile(r"(?:记住|记下|保存|记录|写入)了?[^。！？\n]{0,16}(?:偏好|规则|设置|约定|要求|授权|豁免)"),
     re.compile(r"按(?:此|这个|该|你的)(?:要求|约定|规则|设置|偏好)?(?:执行|处理|办)"),
+    # Taking on a newsroom identity, or dropping the note that it is played ("已固定为：蒿月官报所本人").
+    re.compile(r"(?:固定|切换|设定|设置|改)为[^。！？\n]{0,14}(?:本人|官方主体|官方身份)"),
+    re.compile(_DROP_ROLE_NOTE),
     # A bare "这一点我记住了" before "不过不能跳过核实" still tells the user the request was stored.
     re.compile(r"记住了|记下了|已记住|已记下|已保存|已记录|已写入|已更新(?:设置|偏好|规则)"),
 )

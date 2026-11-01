@@ -1877,7 +1877,7 @@ def _hold_rules(answer: str, rule_kind: str | None, context_kind: str | None) ->
     if not kind:
         return answer
     if rule_requests.agrees_to_rule_change(answer):
-        return rule_requests.RULE_REPLIES[kind if kind in {"drop_citations", "memory_rule"} else "rule_override"]
+        return rule_requests.RULE_REPLIES[kind if kind in {"drop_citations", "memory_rule", "impersonation"} else "rule_override"]
     kept, removed = rule_requests.without_citation_workarounds(answer)
     if not removed:
         return answer
