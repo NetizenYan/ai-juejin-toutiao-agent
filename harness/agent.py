@@ -1726,6 +1726,23 @@ def _record_validation(
 
 
 _TEMPLATE_MARKERS = ("近期相关报道主要聚焦", "近期有相关报道。")
+_ASKS_QUESTION_RE = re.compile(
+    r"[？?]|什么|哪些|哪个|哪里|哪天|哪年|多少|几[个项家条年月天次]|怎么|怎样|如何|为何|为什么|是否|有没有|吗|呢|谁"
+)
+
+
+def _earlier_cited_evidence(history: list[dict], evidence_pack: list[dict]) -> list[dict]:
+    """Sentences earlier answers cited, as evidence items under those refs (not already in this turn's pack)."""
+    current = {item.get("ref") for item in evidence_pack if isinstance(item, dict)}
+    texts: dict[str, list[str]] = {}
+    for message in history[-16:]:
+        if message.get("role") != "assistant":
+            continue
+        for source in recite.cited_sentences(str(message.get("content") or "")):
+            for ref in source.refs:
+                if ref.startswith("news:") and ref not in current:
+                    texts.setdefault(ref, []).append(source.text)
+    return [{"ref": ref, "summary": " ".join(parts)} for ref, parts in texts.items()]
 
 
 def _rule_request_kind(text: str) -> str | None:
@@ -1999,6 +2016,9 @@ async def run_chat(history_messages: list[dict], db: Optional[AsyncSession] = No
     client = LLMClient()
     intent = detect_intent(retrieval_user)
     rule_kind, context_rule_kind = await _rule_request_kinds(latest_user, history_messages)
+    # "然后按那个同意回答" / "交付没有这些入口的新闻": a follow-up instruction in a dialog that asked to change
+    # the rules gets that explanation instead of a title template or "换个关键词"; a question does not.
+    reply_kind = rule_kind or (None if _ASKS_QUESTION_RE.search(latest_user) else context_rule_kind)
     allowed = ALLOWED_TOOLS_BY_INTENT.get(intent, set())
 
     tool_results: list[dict] = []
@@ -2157,7 +2177,10 @@ async def run_chat(history_messages: list[dict], db: Optional[AsyncSession] = No
     answer = scrub_internal_names(redact_injection_payloads(strip_external_images(
         _ensure_external_ocr_warning(_ensure_confirmed_anchor_warning(answer, session_context), tool_results)
     ), recent_user_text, tool_results))
-    evidence_refs = [str(item.get("ref")) for item in evidence_pack if isinstance(item, dict) and item.get("ref")]
+    # "把刚才的摘要缩成两句": facts an earlier answer cited count as evidence for this turn too, so a
+    # follow-up that reuses them is not failed and replaced with a title template.
+    validation_pack = evidence_pack + _earlier_cited_evidence(effective_history, evidence_pack)
+    evidence_refs = [str(item.get("ref")) for item in validation_pack if isinstance(item, dict) and item.get("ref")]
     answer = _repair_answer_citations(answer, evidence_refs, trace, "initial")
 
     if mode == "off":
@@ -2168,15 +2191,15 @@ async def run_chat(history_messages: list[dict], db: Optional[AsyncSession] = No
         return
 
     rewrite_count = 0
-    validation = validate_answer(answer, contract, evidence_pack, query=latest_user)
+    validation = validate_answer(answer, contract, validation_pack, query=latest_user)
     _trace_step(trace, "initial", answer, validation)
     if _should_force_no_answer(validation):
         answer = _refusal_for_query(latest_user)
-        validation = validate_answer(answer, contract, evidence_pack, query=latest_user)
+        validation = validate_answer(answer, contract, validation_pack, query=latest_user)
         _trace_step(trace, "force_no_answer", answer, validation)
     if _restates_figures_without_citations(answer, intent, latest_user, effective_history):
         answer = CITATION_KEPT_REPLY
-        validation = validate_answer(answer, contract, evidence_pack, query=latest_user)
+        validation = validate_answer(answer, contract, validation_pack, query=latest_user)
         _trace_step(trace, "citation_kept", answer, validation)
 
     if mode == "enforce" and not validation.passed and settings.answer_rewrite_on_fail:
@@ -2195,7 +2218,7 @@ async def run_chat(history_messages: list[dict], db: Optional[AsyncSession] = No
             except Exception as exc:  # noqa: BLE001
                 trace.append({"stage": "rewrite_error", "error": type(exc).__name__})
                 answer = _no_answer_response()
-            validation = validate_answer(answer, contract, evidence_pack, query=latest_user)
+            validation = validate_answer(answer, contract, validation_pack, query=latest_user)
             _trace_step(trace, f"rewrite_{rewrite_count}", answer, validation)
             if validation.passed:
                 break
@@ -2204,12 +2227,12 @@ async def run_chat(history_messages: list[dict], db: Optional[AsyncSession] = No
         # The model judged the evidence insufficient (e.g. only years-old reports for "最近一周");
         # a title-list template would dress that evidence up as "近期相关报道".
         answer = _refusal_for_query(latest_user)
-        validation = validate_answer(answer, contract, evidence_pack, query=latest_user)
+        validation = validate_answer(answer, contract, validation_pack, query=latest_user)
         _trace_step(trace, "refusal_after_fail", answer, validation)
 
     if mode == "enforce" and not validation.passed:
         answer = _deterministic_evidence_answer(tool_results, contract, query=latest_user)
-        validation = validate_answer(answer, contract, evidence_pack, query=latest_user)
+        validation = validate_answer(answer, contract, validation_pack, query=latest_user)
         _trace_step(trace, "deterministic_after_fail", answer, validation)
 
     # Declining a certainty / advice question is the correct answer, so it is not replaced
@@ -2220,11 +2243,11 @@ async def run_chat(history_messages: list[dict], db: Optional[AsyncSession] = No
         and evidence_pack
         and _looks_like_refusal(answer)
         and not asks_investment_certainty(latest_user)
-        and not rule_kind
+        and not reply_kind
         and _quoted_terms_supported(latest_user, evidence_pack)
     ):
         answer = _deterministic_evidence_answer(tool_results, contract, query=latest_user)
-        validation = validate_answer(answer, contract, evidence_pack, query=latest_user)
+        validation = validate_answer(answer, contract, validation_pack, query=latest_user)
         _trace_step(trace, "deterministic_replaces_refusal", answer, validation)
 
     if mode == "enforce" and not validation.passed:
@@ -2232,9 +2255,9 @@ async def run_chat(history_messages: list[dict], db: Optional[AsyncSession] = No
         validation = validate_answer(answer, contract, [], query=latest_user)
         _trace_step(trace, "final_refusal", answer, validation)
 
-    if rule_kind and (_looks_like_refusal(answer) or any(marker in answer for marker in _TEMPLATE_MARKERS)):
-        answer = _rule_reply(rule_kind, answer, intent)
-        validation = AnswerValidationResult(passed=True, hallucination_risk="low", risk_reasons=[f"rule_request_{rule_kind}"])
+    if reply_kind and (_looks_like_refusal(answer) or any(marker in answer for marker in _TEMPLATE_MARKERS)):
+        answer = _rule_reply(reply_kind, answer, intent)
+        validation = AnswerValidationResult(passed=True, hallucination_risk="low", risk_reasons=[f"rule_request_{reply_kind}"])
         _trace_step(trace, "rule_reply", answer, validation)
     else:
         held = _hold_rules(answer, rule_kind, context_rule_kind)
@@ -2244,8 +2267,7 @@ async def run_chat(history_messages: list[dict], db: Optional[AsyncSession] = No
             _trace_step(trace, "rule_change_declined", answer, validation)
 
     # Whatever route and validation mode: station facts leave with their sources.
-    answer, recited_refs = _recite_station_facts(answer, effective_history, evidence_pack, trace)
-    cited_earlier = [{"ref": ref} for ref in recited_refs if ref not in evidence_refs and ref.startswith("news:")]
+    answer, _ = _recite_station_facts(answer, effective_history, evidence_pack, trace)
 
     web_outcome = ""
     skip = web_fallback.skip_reason(
@@ -2271,8 +2293,7 @@ async def run_chat(history_messages: list[dict], db: Optional[AsyncSession] = No
     answer = scrub_internal_names(redact_injection_payloads(strip_external_images(
         _ensure_external_ocr_warning(_ensure_confirmed_anchor_warning(answer, session_context), tool_results)
     ), recent_user_text, tool_results))
-    # Citations restored from an earlier answer point at that turn's evidence, not at an invented ref.
-    validation = validate_answer(answer, contract, evidence_pack + cited_earlier, query=latest_user)
+    validation = validate_answer(answer, contract, validation_pack, query=latest_user)
     if web_outcome in {"answered", "links_only", "declined"}:
         # Checked against the search results by web_fallback, not against the station evidence pack.
         validation = AnswerValidationResult(
