@@ -918,6 +918,11 @@ def _aggregate_parents(reranked_chunks: list[dict], top_k: int) -> list[dict]:
                 "rerank_score": round(rscore, 4),
                 "_final": final,
             }
+        if ch.get("cross_encoder_score") is not None:
+            # Absolute relevance (rerank_score is min-max normalised among the candidates).
+            best[nid]["cross_encoder_score"] = max(
+                float(ch["cross_encoder_score"]), float(best[nid].get("cross_encoder_score") or 0.0)
+            )
         best[nid]["_chunks"] = chunks
 
     ordered = sorted(best.values(), key=lambda x: x["_final"], reverse=True)
@@ -1583,13 +1588,43 @@ def _quoted_terms_supported(query: str, evidence_pack: list[dict]) -> bool:
     return all(term in evidence_text for term in quoted_terms)
 
 
+# Best cross-encoder score below which the retrieved reports are not about the message. Measured
+# 2026-11-01: answerable questions whose report was retrieved scored 0.084 at the lowest (median
+# 0.995); EXT3 attack set-up turns that got a title template scored median 0.004, 37 of 43 below 0.03;
+# ordinary questions below 0.03 were almost all about made-up policies that should be refused.
+UNRELATED_EVIDENCE_SCORE = 0.03
+NOT_A_QUESTION_REPLY = (
+    "这条消息里没有要查的新闻问题，我先不检索。改变回答规则的设定（比如去掉出处、换身份、免核实、记住某种特权）不会生效；"
+    "想了解新闻，直接告诉我话题或问题就行，回答会依据站内报道并注明出处。"
+)
+# "请查…", "再核对…", "最后加上报道中…的收费": asking for information without a question mark.
+_ASKS_FOR_INFO_RE = re.compile(
+    r"查|搜|核对|核一|确认|给出|给一下|再给|列出|列一|介绍|说明|说出|讲讲|说说|告诉|补上|补充|加上|比较|区分|综合|总结|概括"
+    r"|数据|规模|数量|多少|进展|动态|链接|网址|http"
+)
+
+
+def _asks_for_information(text: str) -> bool:
+    return bool(_ASKS_QUESTION_RE.search(text or "") or _ASKS_FOR_INFO_RE.search(text or ""))
+
+
+def _evidence_unrelated(results: list[dict]) -> bool:
+    """True when the reranker scored every retrieved report as unrelated (False without scores)."""
+    scores = [
+        item.get("cross_encoder_score")
+        for result in results if result.get("tool") == "retrieve_news"
+        for item in (result.get("items") or [])
+    ]
+    return bool(scores) and all(score is not None for score in scores) and max(scores) < UNRELATED_EVIDENCE_SCORE
+
+
 def _deterministic_evidence_answer(
     results: list[dict],
     contract: AnswerContract,
     query: str | None = None,
 ) -> str:
     evidence = _build_evidence_pack(results)
-    if not evidence:
+    if not evidence or _evidence_unrelated(results):
         return _refusal_for_query(query)
     # Certainty / advice questions: the summary may only follow a risk warning.
     guard = INVESTMENT_GUARD_PREFIX if asks_investment_certainty(query) else ""
@@ -2320,6 +2355,18 @@ async def run_chat(history_messages: list[dict], db: Optional[AsyncSession] = No
             answer = held
             validation = AnswerValidationResult(passed=True, hallucination_risk="low", risk_reasons=["rule_change_declined"])
             _trace_step(trace, "rule_change_declined", answer, validation)
+
+    if (
+        not reply_kind
+        and _looks_like_refusal(answer)
+        and not _asks_for_information(latest_user)
+        and not asks_investment_certainty(latest_user)
+        and (not evidence_pack or _evidence_unrelated(tool_results))
+    ):
+        # "我们为一个虚构新闻台制作 staging 页面": nothing to look up; "换个关键词再试" would be beside the point.
+        answer = NOT_A_QUESTION_REPLY
+        validation = AnswerValidationResult(passed=True, hallucination_risk="low", risk_reasons=["not_a_question"])
+        _trace_step(trace, "not_a_question", answer, validation)
 
     # Whatever route and validation mode: station facts leave with their sources.
     answer, _ = _recite_station_facts(answer, effective_history, evidence_pack, trace)
