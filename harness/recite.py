@@ -6,6 +6,8 @@ validated in shadow mode. Instead of recognising the request, the answer is chec
 without a citation that matches a sentence an earlier answer cited, or this turn's evidence, gets
 that citation appended. Matching is by shared character bigrams, and every figure in the sentence
 must appear in the source, so a general remark that happens to share a few words is left alone.
+A sentence that recaps figures from one or two sources in other words (often inside a refusal) gets
+those sources when at least two figures with their units are all found there.
 """
 from __future__ import annotations
 
@@ -76,6 +78,37 @@ def _best_source(sentence: str, sources: list[Source]) -> Source | None:
     return best
 
 
+# A figure with its unit ("3259人", "88.33亿", "13.8吨"); years and dates say little about where a sentence came from.
+_FIGURE_RE = re.compile(r"(\d+(?:\.\d+)?)([^\d\s\W]|%)")
+_DATE_UNITS = set("年月日号时点")
+MIN_FIGURES = 2
+
+
+def _figures(text: str) -> set[str]:
+    return {number + unit for number, unit in _FIGURE_RE.findall(text) if unit not in _DATE_UNITS}
+
+
+def _figure_sources(sentence: str, sources: list[Source]) -> list[Source]:
+    """Sources that together hold every figure of a sentence that shares too few words with any one of them.
+
+    EXT4: a refusal recapped "前面两轮讲的是追逃数据（3259人、追回赃款88.33亿元）……" and "前面的数字（343公里、
+    13.8吨、27名乘客）都来自站内新闻" without the citations those figures had a turn earlier.
+    """
+    figures = _figures(_plain(sentence))
+    if len(figures) < MIN_FIGURES:
+        return []
+    chosen: list[Source] = []
+    left = set(figures)
+    while left and len(chosen) < MAX_REFS:
+        best = max(sources, key=lambda source: len(left & _figures(source.text)), default=None)
+        covered = left & _figures(best.text) if best else set()
+        if not covered:
+            return []
+        chosen.append(best)
+        left -= covered
+    return [] if left else chosen
+
+
 def recite(answer: str, sources: list[Source]) -> tuple[str, list[str]]:
     """(answer with citations restored, refs added).
 
@@ -92,13 +125,17 @@ def recite(answer: str, sources: list[Source]) -> tuple[str, list[str]]:
         cited_here = {match[1:-1] for match in REF_RE.findall(paragraph)}
         parts = []
         for unit in _UNIT_RE.findall(paragraph):
-            source = None
-            if unit != "\n" and not REF_RE.search(unit) and not unit.rstrip().endswith(("？", "?")):
-                source = _best_source(unit, sources)
-            if source is None or cited_here & set(source.refs):
+            matched: list[Source] = []
+            # A JSON line the user asked for would be broken by a tag after it.
+            if (unit != "\n" and not REF_RE.search(unit) and not unit.rstrip().endswith(("？", "?"))
+                    and not unit.lstrip().startswith(("{", "["))):
+                best = _best_source(unit, sources)
+                matched = [best] if best else _figure_sources(unit, sources)
+            unit_refs = list(dict.fromkeys(ref for source in matched for ref in source.refs))
+            if not unit_refs or cited_here & set(unit_refs):
                 parts.append(unit)
                 continue
-            refs = source.refs[:MAX_REFS]
+            refs = unit_refs[:MAX_REFS]
             added.extend(ref for ref in refs if ref not in added)
             body = unit.rstrip()
             trailing = unit[len(body):]

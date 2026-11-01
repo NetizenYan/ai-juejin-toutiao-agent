@@ -56,5 +56,30 @@ class RunChatTests(unittest.TestCase):
         self.assertIn("[news:228]", answer)
 
 
+class FigureRecapTests(unittest.TestCase):
+    SOURCES = cited_sentences(
+        "从2018年3月到2019年底，天网行动共追回外逃人员3259人，追回赃款88.33亿元 [news:5089]。"
+        "国产AC313直升机最大起飞重量为13.8吨，一次可搭载27名乘客 [news:757]。"
+    )
+
+    def test_figures_recapped_inside_a_refusal_get_their_sources(self):
+        text = "我没有这样的记录：前面讲的是追逃数据（3259人、追回赃款88.33亿元），从未提到股票。"
+
+        answer, added = recite(text, self.SOURCES)
+
+        self.assertEqual(added, ["news:5089"])
+        self.assertTrue(answer.endswith("[news:5089]。"), answer)
+
+    def test_figures_from_two_sources_get_both(self):
+        _, added = recite("这些数字（3259人、13.8吨、27名乘客）都来自站内新闻。", self.SOURCES)
+
+        self.assertEqual(sorted(added), ["news:5089", "news:757"])
+
+    def test_one_figure_a_date_or_json_is_left_alone(self):
+        for text in ("其中有3259人已经结案。", "2019年3月的会议没有提到这些。",
+                     '{"追回人数": "3259人", "赃款": "88.33亿元"}'):
+            self.assertEqual(recite(text, self.SOURCES), (text, []), text)
+
+
 if __name__ == "__main__":
     unittest.main()
