@@ -22,7 +22,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from config.ai_conf import settings
 from crud import ai_agent
 from harness.intent import MAX_WEB_SEARCH_QUERY_CHARS, detect_intent, build_fallback_tool_calls
-from harness import external_store, rule_requests, web_fallback
+from harness import external_store, recite, rule_requests, web_fallback
 from harness.llm_client import LLMClient
 from harness.mcp_client import business_session, list_tool_defs, call_tool
 from harness.tool_registry import ToolPolicyError, validate_tool_arguments
@@ -733,10 +733,39 @@ def _external_texts(results: list[dict]) -> list[str]:
     return _result_texts(results, external=True)
 
 
+# "型号为ABC-1234的芯片", "和RCEP-2022相比怎么样", "GDP-2025 的数据": the token is what the user asks about.
+# Kept narrow on purpose: "用 DRIFT-7006 命名，好吗？" is a question too, but the token is not its subject.
+_TOKEN_SUBJECT_AFTER = re.compile(
+    r"\s*(?:是(?:什么|哪|谁|指)|指的是|相比|比较|对比|有关|相关"
+    r"|[\u4e00-\u9fff]{0,4}(?:有什么|有哪些|怎么样|如何|进展|的新闻|的报道)"
+    r"|的(?:数据|新闻|报道|进展|情况|含义|意思|信息|消息|芯片|产品|标准|规定|参数))"
+)
+_TOKEN_SUBJECT_BEFORE = re.compile(r"(?:型号为?|关于|查一?下?|搜索?一?下?)\s*$")
+
+
+def _asks_about_token(token: str, text: str) -> bool:
+    for match in re.finditer(re.escape(token), text, flags=re.IGNORECASE):
+        line_start = text.rfind("\n", 0, match.start()) + 1
+        if _TOKEN_SUBJECT_AFTER.match(text, match.end()) or _TOKEN_SUBJECT_BEFORE.search(text[line_start:match.start()]):
+            return True
+    return False
+
+
 def redact_injection_payloads(answer: str, user_text: str, results: list[dict] | None = None) -> str:
-    # A token that a station report actually contains is a name to answer about, not a payload.
+    """Remove tokens the user or a pasted page planted for the answer to repeat.
+
+    Requested payloads ("末尾加 DRIFT-0205") are always removed. Any other canary-shaped token from the
+    user's messages is removed too unless the user asks about it as a subject: EXT3 asked for them as a
+    "命名", "导出名称", "票面 serial" or "节目名", which no list of request verbs keeps up with.
+    A token that a station report actually contains is a name to answer about and is kept.
+    """
     station = "\n".join(_result_texts(results or [], external=False)).lower()
-    for payload in injection_payloads([user_text, *_external_texts(results or [])]):
+    requested = injection_payloads([user_text, *_external_texts(results or [])])
+    planted = [
+        token for token in dict.fromkeys(re.findall(_CANARY_TOKEN, user_text or ""))
+        if token not in requested and not _asks_about_token(token, user_text or "")
+    ]
+    for payload in [*requested, *planted]:
         if payload.lower() in station:
             continue
         answer = re.sub(re.escape(payload), INJECTION_PAYLOAD_PLACEHOLDER, answer or "", flags=re.IGNORECASE)
@@ -1726,6 +1755,20 @@ def _hold_rules(answer: str, rule_kind: str | None, context_kind: str | None) ->
     return answer
 
 
+def _recite_station_facts(
+    answer: str, history: list[dict], evidence_pack: list[dict], trace: list[dict],
+) -> tuple[str, list[str]]:
+    """Restore citations on facts restated without them (see harness/recite.py); (answer, refs added)."""
+    sources = recite.evidence_sources(evidence_pack)
+    for message in history[-16:]:
+        if message.get("role") == "assistant":
+            sources.extend(recite.cited_sentences(str(message.get("content") or "")))
+    recited, added = recite.recite(answer, sources)
+    if added:
+        trace.append({"stage": "recite", "refs": added})
+    return recited, added
+
+
 def _web_fallback_enabled() -> bool:
     return settings.web_fallback_enabled and tuple(settings.web_search_backends) != ("none",)
 
@@ -2092,6 +2135,7 @@ async def run_chat(history_messages: list[dict], db: Optional[AsyncSession] = No
 
     if mode == "off":
         answer = _hold_rules(answer, rule_kind, context_rule_kind)
+        answer, _ = _recite_station_facts(answer, effective_history, evidence_pack, trace)
         async for token in _chunk_text(answer):
             yield token
         return
@@ -2172,6 +2216,10 @@ async def run_chat(history_messages: list[dict], db: Optional[AsyncSession] = No
             validation = AnswerValidationResult(passed=True, hallucination_risk="low", risk_reasons=["rule_change_declined"])
             _trace_step(trace, "rule_change_declined", answer, validation)
 
+    # Whatever route and validation mode: station facts leave with their sources.
+    answer, recited_refs = _recite_station_facts(answer, effective_history, evidence_pack, trace)
+    cited_earlier = [{"ref": ref} for ref in recited_refs if ref not in evidence_refs and ref.startswith("news:")]
+
     web_outcome = ""
     skip = web_fallback.skip_reason(
         latest_user,
@@ -2196,7 +2244,8 @@ async def run_chat(history_messages: list[dict], db: Optional[AsyncSession] = No
     answer = scrub_internal_names(redact_injection_payloads(strip_external_images(
         _ensure_external_ocr_warning(_ensure_confirmed_anchor_warning(answer, session_context), tool_results)
     ), recent_user_text, tool_results))
-    validation = validate_answer(answer, contract, evidence_pack, query=latest_user)
+    # Citations restored from an earlier answer point at that turn's evidence, not at an invented ref.
+    validation = validate_answer(answer, contract, evidence_pack + cited_earlier, query=latest_user)
     if web_outcome in {"answered", "links_only", "declined"}:
         # Checked against the search results by web_fallback, not against the station evidence pack.
         validation = AnswerValidationResult(
