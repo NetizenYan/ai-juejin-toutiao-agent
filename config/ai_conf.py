@@ -131,6 +131,8 @@ class AISettings:
     rag_expand_body_evidence: bool = _bool("RAG_EXPAND_BODY_EVIDENCE", True)
     rag_body_chunks_per_parent: int = _int("RAG_BODY_CHUNKS_PER_PARENT", 1)
     rag_body_fallback_slots: int = _int("RAG_BODY_FALLBACK_SLOTS", 0)
+    # Top articles that also pass on their next-best chunk to the reranker (0 = one chunk per article).
+    rag_more_chunk_articles: int = _int("RAG_MORE_CHUNK_ARTICLES", 10)
     rag_econ_collection_enabled: bool = _bool("RAG_ECON_COLLECTION_ENABLED", False)
     rag_econ_collection_name: str = os.getenv("RAG_ECON_COLLECTION_NAME", "toutiao_exp_econ_recent_20260621")
     # "2026年5月…" style windows become a hard publish_ts filter (harness/date_window.py).

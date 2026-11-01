@@ -709,5 +709,30 @@ class RagTimeAwareRankingTests(unittest.IsolatedAsyncioTestCase):
         self.assertNotIn("search_params", fake.query_kwargs[0])
 
 
+class MoreChunksTests(unittest.TestCase):
+    def _chunk(self, article, index, kind="body"):
+        return {"id": article, "evidence_id": f"news:{article}", "chunk_index": index, "chunk_type": kind}
+
+    def test_top_articles_pass_on_their_next_best_other_chunk(self):
+        pool = [self._chunk("a", 0), self._chunk("a", 0, "summary"), self._chunk("b", 2), self._chunk("a", 1),
+                self._chunk("b", 3), self._chunk("a", 2)]
+        kept = [pool[0], pool[2]]
+
+        extra = rag_search._more_chunks(pool, kept, 10)
+
+        self.assertEqual([(c["id"], c["chunk_index"]) for c in extra], [("a", 1), ("b", 3)])
+
+    def test_a_kept_summary_chunk_is_followed_by_the_body_it_opens(self):
+        pool = [self._chunk("a", 0, "summary"), self._chunk("a", 0)]
+
+        self.assertEqual(rag_search._more_chunks(pool, pool[:1], 10), [pool[1]])
+
+    def test_only_the_first_articles_and_none_when_off(self):
+        pool = [self._chunk("a", 0), self._chunk("b", 0), self._chunk("a", 1), self._chunk("b", 1)]
+
+        self.assertEqual(rag_search._more_chunks(pool, pool[:2], 1), [pool[2]])
+        self.assertEqual(rag_search._more_chunks(pool, pool[:2], 0), [])
+
+
 if __name__ == "__main__":
     unittest.main()

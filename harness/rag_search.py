@@ -406,6 +406,34 @@ def _dedupe_items(items: list[dict]) -> list[dict]:
     return deduped
 
 
+# The answer to the second half of a question is often in another chunk of the same report (EXT4 云岭:
+# chunk 0 is the memorial's history, chunk 1 names the university partner); deduplicating by article
+# dropped it before the reranker saw it. settings.rag_more_chunk_articles top articles pass on one more.
+def _more_chunks(pool: list[dict], kept: list[dict], articles: int) -> list[dict]:
+    """For the first `articles` kept items, the best-ranked other chunk of the same article.
+
+    A kept summary chunk is the opening of body chunk 0 cut short (EXT4 源火: the figure asked for is
+    in the body), so that body chunk counts as another chunk.
+    """
+    wanted: dict[str, dict] = {}
+    for item in kept[:articles]:
+        key = _item_evidence_id(item) or item.get("parent_news_id")
+        if key:
+            wanted[str(key)] = item
+    extra: list[dict] = []
+    for item in pool:
+        key = str(_item_evidence_id(item) or item.get("parent_news_id") or "")
+        first = wanted.get(key)
+        if first is None:
+            continue
+        other_chunk = str(item.get("chunk_index")) != str(first.get("chunk_index"))
+        fuller_body = first.get("chunk_type") == "summary" and item.get("chunk_type") == "body"
+        if other_chunk or fuller_body:
+            extra.append(item)
+            del wanted[key]
+    return extra
+
+
 def _with_body_fallback(summary_items: list[dict], body_items: list[dict], final_limit: int, slots: int) -> tuple[list[dict], int]:
     slots = max(0, min(int(slots or 0), max(1, final_limit)))
     summary_slots = max(0, final_limit - slots)
@@ -583,6 +611,7 @@ async def search_news_rag(
     result["evidence_ids"] = [
         evidence_id for item in result["items"] if (evidence_id := _item_evidence_id(item))
     ]
+    result["more_chunks"] = _more_chunks(summary_items, result["items"], getattr(settings, "rag_more_chunk_articles", 0))
 
     if effective_expand_body:
         await _attach_body_evidence(qdrant, result, effective_body_chunks, collection_name)

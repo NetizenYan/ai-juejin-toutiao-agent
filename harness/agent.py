@@ -2140,6 +2140,10 @@ async def run_chat(history_messages: list[dict], db: Optional[AsyncSession] = No
 
     # RAG 精排 + 父子聚合：chunk 级 cross-encoder 重排 → 聚合到 parent news_id（取最佳 chunk）
     # → 轻时间衰减 → 标题去重 → top-K 父文档
+    for result in tool_results:
+        if result.get("tool") == "retrieve_news" and result.get("more_chunks"):
+            # Another chunk of a top article, for the second half of the question (see rag_search._more_chunks).
+            result["items"] = [*(result.get("items") or []), *result.pop("more_chunks")]
     _merge_retrieval_results(tool_results, retrieval_user)
     for result in tool_results:
         if result.get("tool") == "retrieve_news" and result.get("items"):
