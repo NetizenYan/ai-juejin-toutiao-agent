@@ -4,6 +4,7 @@ from harness.answer_contract import AnswerContract
 from harness.answer_validator import (
     asks_investment_certainty,
     declines_to_answer,
+    drop_unsupported_figures,
     extract_citations,
     is_refusal,
     quoted_term_supported,
@@ -336,6 +337,28 @@ class MagnitudeTests(unittest.TestCase):
         result = validate_answer("2024年水果总产量为3.35亿吨 [news:jjrb:1]。", _plain_contract(), evidence)
 
         self.assertEqual(result.unsupported_numbers, [])
+
+
+class DropUnsupportedFiguresTests(unittest.TestCase):
+    def test_the_clause_with_the_figure_goes_and_its_citation_moves_back(self):
+        answer = "据报道，“天网行动”共追回外逃人员 **3259人**，追回赃款 **99.77亿元** [news:5089]。引渡第一案是姚锦旗 [news:5089]。"
+
+        self.assertEqual(drop_unsupported_figures(answer, ["99.77"]),
+                         "据报道，“天网行动”共追回外逃人员 **3259人** [news:5089]。引渡第一案是姚锦旗 [news:5089]。")
+
+    def test_a_magnitude_mismatch_goes_too(self):
+        answer = "2024年水果总产量3.35亿吨 [news:jjrb:1]，约3.35万亿公斤 [news:jjrb:1]。产量稳定增长。"
+
+        self.assertEqual(drop_unsupported_figures(answer, ["3.35万亿"]), "2024年水果总产量3.35亿吨 [news:jjrb:1]。产量稳定增长。")
+
+    def test_nothing_unsupported_leaves_the_answer_alone(self):
+        answer = "共追回3259人，赃款88.33亿元 [news:5089]。"
+
+        self.assertEqual(drop_unsupported_figures(answer, []), answer)
+
+    def test_a_leading_bad_clause_is_dropped_with_its_citation(self):
+        self.assertEqual(drop_unsupported_figures("赃款99.77亿元 [news:1]。姚锦旗被引渡 [news:1]。", ["99.77"]),
+                         "姚锦旗被引渡 [news:1]。")
 
 
 if __name__ == "__main__":

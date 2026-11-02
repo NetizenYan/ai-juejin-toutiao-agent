@@ -41,6 +41,7 @@ from harness.rag_query_router import matched_source_terms
 from harness.answer_validator import (
     AnswerValidationResult,
     declines_to_answer,
+    drop_unsupported_figures,
     extract_citations,
     asks_about_investment,
     asks_investment_certainty,
@@ -1636,7 +1637,10 @@ def _deterministic_evidence_answer(
     for count in range(max_points, 0, -1):
         titles = []
         for item in evidence[:count]:
-            title = _brief_text(item.get("title") or "相关新闻", limit=18).rstrip("...")
+            title = _brief_text(item.get("title") or "相关新闻", limit=18)
+            if title.endswith("..."):
+                # "新闻联播 2019-01-08｜2019年…" cut to "…｜20": a stub figure the evidence never has.
+                title = re.sub(r"\d+(?:\.\d*)?$", "", title[:-3]).rstrip()
             titles.append(title)
         citation = f"[{evidence[0]['ref']}]"
         answer = f"{guard}近期相关报道主要聚焦{'、'.join(titles)}。{citation}"
@@ -2288,6 +2292,7 @@ async def run_chat(history_messages: list[dict], db: Optional[AsyncSession] = No
     rewrite_count = 0
     validation = validate_answer(answer, contract, validation_pack, query=latest_user)
     _trace_step(trace, "initial", answer, validation)
+    draft, draft_validation = answer, validation
     if _should_force_no_answer(validation):
         answer = _refusal_for_query(latest_user)
         validation = validate_answer(answer, contract, validation_pack, query=latest_user)
@@ -2317,6 +2322,21 @@ async def run_chat(history_messages: list[dict], db: Optional[AsyncSession] = No
             _trace_step(trace, f"rewrite_{rewrite_count}", answer, validation)
             if validation.passed:
                 break
+
+    if (
+        rewrite_count
+        and not reply_kind
+        and (not validation.passed or _looks_like_refusal(answer))
+        and draft_validation.constraint_violations == ["unsupported_number_or_date"]
+        and extract_citations(draft)
+    ):
+        # The draft was right but for one figure, and the rewrite gave up ("站内未找到…") or failed again:
+        # keep the draft's supported, cited facts (EXT4dev atk_cx4_055#1 lost 3259人 / 姚锦旗 this way).
+        trimmed = drop_unsupported_figures(draft, draft_validation.unsupported_numbers)
+        trimmed_validation = validate_answer(trimmed, contract, validation_pack, query=latest_user)
+        if trimmed_validation.passed and extract_citations(trimmed) and not _looks_like_refusal(trimmed):
+            answer, validation = trimmed, trimmed_validation
+            _trace_step(trace, "trimmed_draft", answer, validation)
 
     if mode == "enforce" and not validation.passed and declines_to_answer(answer):
         # The model judged the evidence insufficient (e.g. only years-old reports for "最近一周");

@@ -125,9 +125,12 @@ def _run(history, model_answer, station_items, mode="enforce"):
     async def rerank(_query, items, top_k):
         return items
 
+    # A list gives the draft first, then the rewrites.
+    answers = list(model_answer) if isinstance(model_answer, (list, tuple)) else [model_answer]
+
     class Client:
         async def complete(self, _messages):
-            return model_answer
+            return answers.pop(0) if len(answers) > 1 else answers[0]
 
         async def complete_message(self, *_args, **_kwargs):
             raise RuntimeError("deterministic planning only")

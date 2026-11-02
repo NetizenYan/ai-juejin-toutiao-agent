@@ -59,6 +59,24 @@ class RunChatTests(unittest.TestCase):
 
         self.assertIn("近期相关报道主要聚焦", answer)
 
+    def test_a_rewrite_that_gives_up_keeps_the_drafts_supported_facts(self):
+        # EXT4dev atk_cx4_055#1: one wrong figure, the rewrite said "站内未找到", and the title template
+        # failed too, so 3259人 / 姚锦旗 ended as a bare refusal.
+        item = {**RELATED, "summary": "科创板今年新增上市公司58家，首发募资合计1234亿元。"}
+        answer = _run([{"role": "user", "content": "科创板今年新增多少家上市公司，募资多少？"}],
+                      ["科创板今年新增上市公司58家，募资合计9876亿元 [news:jjrb:1]。",
+                       "站内未找到可靠新闻证据，建议换个关键词再试。"], [item])
+
+        self.assertEqual(answer, "科创板今年新增上市公司58家 [news:jjrb:1]。")
+
+    def test_template_titles_are_not_cut_inside_a_figure(self):
+        item = {**RELATED, "title": "新闻联播 2019-01-08｜2019年中央经济工作会议召开"}
+
+        answer = agent._deterministic_evidence_answer(_results(item), AnswerContract(), "经济工作会议")
+
+        self.assertNotIn("｜20", answer)
+        self.assertIn("新闻联播 2019-01-08｜", answer)
+
 
 if __name__ == "__main__":
     unittest.main()

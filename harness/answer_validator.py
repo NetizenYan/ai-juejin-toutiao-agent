@@ -259,6 +259,39 @@ def _magnitude_mismatches(answer: str, supported_text: str) -> list[str]:
     })
 
 
+_CLAUSE_RE = re.compile(r"[^。！？!?\n；;，,]+[。！？!?\n；;，,]*|[。！？!?\n；;，,]+")
+_SENTENCE_END = set("。！？!?\n")
+
+
+def drop_unsupported_figures(answer: str, unsupported_numbers: list[str]) -> str:
+    """The answer without the clauses that carry a figure the evidence lacks.
+
+    A clause's citations move to the clause kept before it, so "共追回3259人，追回赃款99.77亿元
+    [news:5089]。" keeps "共追回3259人 [news:5089]。" (EXT4dev: one wrong figure turned a correct answer
+    into a bare refusal after the rewrite).
+    """
+    bad_digits = {value for value in unsupported_numbers if not _MAGNITUDE_RE.fullmatch(value)}
+    bad_magnitudes = [value for value in unsupported_numbers if _MAGNITUDE_RE.fullmatch(value)]
+    kept: list[str] = []
+    for piece in _CLAUSE_RE.findall(answer or ""):
+        body = piece.rstrip("。！？!?\n；;，,")
+        claimed = CITATION_RE.sub("", body)
+        if not (_numbers(claimed) & bad_digits or any(value in claimed for value in bad_magnitudes)):
+            kept.append(piece)
+            continue
+        ending = piece[len(body):]
+        if not kept:
+            continue
+        last = kept[-1]
+        last_body = last.rstrip("。！？!?\n；;，,")
+        moved = "".join(f" {cite}" for cite in CITATION_RE.findall(body) if cite not in last_body)
+        last_ending = last[len(last_body):]
+        if any(char in _SENTENCE_END for char in ending) and not any(char in _SENTENCE_END for char in last_ending):
+            last_ending = ending
+        kept[-1] = last_body + moved + last_ending
+    return "".join(kept).strip()
+
+
 def _add_unique(items: list[str], value: str) -> None:
     if value not in items:
         items.append(value)
