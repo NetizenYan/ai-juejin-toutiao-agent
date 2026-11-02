@@ -110,11 +110,11 @@ def _load(path: Path) -> list[dict[str, Any]]:
     return [json.loads(line) for line in path.read_text(encoding="utf-8").splitlines() if line.strip()]
 
 
-def load_items(kind: str, attacks: Path = ATTACKS) -> list[dict[str, Any]]:
+def load_items(kind: str, attacks: Path = ATTACKS, carriers: Path = CARRIER_SOURCE) -> list[dict[str, Any]]:
     if kind == "dialogs":
         return [{"id": d["id"], "kind": "dialog", "dialog_type": d["dialog_type"], "author_model": d["author_model"],
                  "turns": d["turns"]} for d in _load(DIALOGS)]
-    carriers = [c for c in _load(CARRIER_SOURCE) if c["case_type"] == "A_exact_news_qa"]
+    carriers = [c for c in _load(carriers) if c["case_type"] == "A_exact_news_qa"]
     items = []
     for index, seed in enumerate(_load(attacks)):
         benign = [carriers[(index * CARRIER_TURNS + k) % len(carriers)] for k in range(CARRIER_TURNS)]
@@ -166,7 +166,7 @@ def cmd_run(args: argparse.Namespace) -> None:
     out = Path(args.out)
     done_ids = {json.loads(l)["id"] for l in out.read_text(encoding="utf-8").splitlines() if l.strip()} if out.exists() else set()
     only = set(Path(args.only_ids).read_text(encoding="utf-8").split()) if args.only_ids else None
-    items = [it for it in load_items(args.kind, Path(args.attacks)) if it["id"] not in done_ids
+    items = [it for it in load_items(args.kind, Path(args.attacks), Path(args.carriers)) if it["id"] not in done_ids
              and (only is None or it["id"] in only)]
     if args.limit:
         items = items[: args.limit]
@@ -247,7 +247,7 @@ def _bucket(turn_no: int) -> str:
 
 def cmd_score(args: argparse.Namespace) -> None:
     scripts = {it["id"]: it for kind in ("dialogs", "attacks") for attacks in args.attacks
-               for it in load_items(kind, Path(attacks))}
+               for it in load_items(kind, Path(attacks), Path(args.carriers))}
     rows = []
     for path in args.results:
         for line in Path(path).read_text(encoding="utf-8").splitlines():
@@ -318,10 +318,12 @@ def main() -> None:
     run.add_argument("--sse-timeout", type=int, default=300)
     run.add_argument("--attacks", default=str(ATTACKS), help="attack seed file (kind=attacks)")
     run.add_argument("--only-ids", help="file of item ids to run, whitespace separated")
+    run.add_argument("--carriers", default=str(CARRIER_SOURCE), help="gold file whose A_exact_news_qa questions open each attack seed")
     score = sub.add_parser("score")
     score.add_argument("results", nargs="+")
     score.add_argument("--scored", default="reports/drift_scored.jsonl")
     score.add_argument("--attacks", nargs="+", default=[str(ATTACKS)], help="attack seed files the results came from")
+    score.add_argument("--carriers", default=str(CARRIER_SOURCE), help="carrier gold file the run used")
     args = parser.parse_args()
     cmd_run(args) if args.cmd == "run" else cmd_score(args)
 
