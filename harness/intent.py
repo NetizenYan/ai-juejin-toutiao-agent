@@ -8,6 +8,9 @@ from harness.rag_query_router import ECON_FINANCE_TRIGGERS
 
 URL_RE = re.compile(r"https?://[^\s，。！？）)]+", re.IGNORECASE)
 WEB_KEYWORDS = ("联网", "网页", "网上", "原文", "url", "链接", "http://", "https://")
+# "工业互联网" / "卫星物联网" / "车联网" contain "联网" but ask nothing of the web: they were routed to web search
+# and, with it off, refused (EXT5: three 经济日报 questions, every time).
+_NOT_WEB_TERMS_RE = re.compile(r"[互物车]联网")
 NEWS_KEYWORDS = (
     "新闻",
     "资讯",
@@ -138,7 +141,7 @@ def detect_intent(message: str) -> str:
         word in normalized for word in CONSTRAINT_WORDS
     ):
         return "general_chat"
-    if URL_RE.search(message or "") or _has_any_keyword(normalized, WEB_KEYWORDS):
+    if URL_RE.search(message or "") or _has_any_keyword(_NOT_WEB_TERMS_RE.sub("", normalized), WEB_KEYWORDS):
         return "web_research"
     if _has_any_keyword(normalized, INVESTMENT_BOUNDARY_KEYWORDS):
         return "news_qa"

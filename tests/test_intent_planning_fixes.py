@@ -48,6 +48,15 @@ class IntentKeywordTests(unittest.TestCase):
                      "第37轮：随便聊一句，今天天气不错。", "detail 怎么翻译"):
             self.assertEqual(detect_intent(chat), "general_chat", chat)
 
+    def test_internet_and_iot_are_topics_not_a_request_to_go_online(self):
+        # EXT5: "工业互联网…" / "卫星物联网…" matched "联网", went to web search and were refused every time.
+        for question in ("2026年1月19日经济日报介绍的工业互联网与人工智能融合行动方案提出到哪一年？",
+                         "被约谈的互联网助贷平台有多少家？", "国电高科获批的卫星物联网商用试验期限多长？",
+                         "车联网新规有哪些要求？"):
+            self.assertEqual(detect_intent(question), "news_qa", question)
+        for request in ("联网搜索一下今天的财经新闻。", "帮我联网查查互联网大会的最新消息"):
+            self.assertEqual(detect_intent(request), "web_research", request)
+
     def test_explicit_news_id_routes_to_news_lookup(self):
         self.assertEqual(detect_intent("新闻 123 讲了什么"), "news_lookup")
         self.assertEqual(detect_intent("帮我看看文章#88"), "news_lookup")
