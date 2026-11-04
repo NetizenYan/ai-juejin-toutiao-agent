@@ -1281,7 +1281,7 @@ def _contract_prompt(contract: AnswerContract | None, query: str | None = None) 
     else:
         # A disclaimer on "新质生产力如何影响制造业" is noise; the validator still blocks advice wording.
         lines.append("- 用户没有问投资：不要主动延伸到股市、板块涨跌或投资建议，也不需要写投资免责声明。")
-    lines.append("- 如果证据不足或不支持用户问题，请说“站内未找到可靠新闻证据，建议换个关键词再试。”")
+    lines.append(f"- 如果证据不足或不支持用户问题，请说“{NO_ANSWER_REPLY}”")
     return "\n".join(lines)
 
 
@@ -1384,8 +1384,13 @@ def _build_evidence_pack(results: list[dict]) -> list[dict]:
     return evidence
 
 
+# Also the reply to requests outside news ("写一个虚构报纸的版头"): they retrieve nothing related either, so
+# "建议换个关键词再试" alone suggested the station could answer them (EXT5: 20 lead-in turns).
+NO_ANSWER_REPLY = "站内未找到可靠新闻证据。我只根据站内新闻回答问题；如果问的是新闻，可以换个关键词再试。"
+
+
 def _no_answer_response() -> str:
-    return "站内未找到可靠新闻证据，建议换个关键词再试。"
+    return NO_ANSWER_REPLY
 
 
 INVESTMENT_GUARD_PREFIX = "仅凭新闻报道不能判断涨跌或收益，以下不构成投资建议。"
@@ -1595,9 +1600,11 @@ def _quoted_terms_supported(query: str, evidence_pack: list[dict]) -> bool:
 # 0.995); EXT3 attack set-up turns that got a title template scored median 0.004, 37 of 43 below 0.03;
 # ordinary questions below 0.03 were almost all about made-up policies that should be refused.
 UNRELATED_EVIDENCE_SCORE = 0.03
+# Only reached when the dialog has no rule request (one would get its rule reply instead), so it says what the
+# assistant does rather than that rule changes do not take effect ("设想一家虚构报纸，先写它的版头", EXT5).
 NOT_A_QUESTION_REPLY = (
-    "这条消息里没有要查的新闻问题，我先不检索。改变回答规则的设定（比如去掉出处、换身份、免核实、记住某种特权）不会生效；"
-    "想了解新闻，直接告诉我话题或问题就行，回答会依据站内报道并注明出处。"
+    "这条消息里没有要查的新闻问题。我只根据站内新闻回答问题，不处理写作、排版这类和新闻无关的请求；"
+    "想了解新闻，直接告诉我话题或问题就行，回答会注明出处。"
 )
 # "请查…", "再核对…", "最后加上报道中…的收费": asking for information without a question mark.
 _ASKS_FOR_INFO_RE = re.compile(
@@ -2290,6 +2297,9 @@ async def run_chat(history_messages: list[dict], db: Optional[AsyncSession] = No
         return
 
     rewrite_count = 0
+    # "把上一条新闻改成三行字幕": the rewrite restates earlier cited facts without their sources and failed as
+    # missing_citation, then became the not-a-question note (EXT5). Sources are restored before validating.
+    answer, _ = _recite_station_facts(answer, effective_history, evidence_pack, trace)
     validation = validate_answer(answer, contract, validation_pack, query=latest_user)
     _trace_step(trace, "initial", answer, validation)
     draft, draft_validation = answer, validation
@@ -2315,6 +2325,7 @@ async def run_chat(history_messages: list[dict], db: Optional[AsyncSession] = No
                     )
                 )
                 answer = _repair_answer_citations(answer, evidence_refs, trace, f"rewrite_{rewrite_count}")
+                answer, _ = _recite_station_facts(answer, effective_history, evidence_pack, trace)
             except Exception as exc:  # noqa: BLE001
                 trace.append({"stage": "rewrite_error", "error": type(exc).__name__})
                 answer = _no_answer_response()

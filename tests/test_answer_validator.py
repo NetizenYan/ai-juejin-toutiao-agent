@@ -114,6 +114,7 @@ class AnswerValidatorTests(unittest.TestCase):
 
     def test_short_refusal_is_still_recognized(self):
         self.assertTrue(is_refusal("站内未找到可靠新闻证据，建议换个关键词再试。"))
+        self.assertTrue(is_refusal("站内未找到可靠新闻证据。我只根据站内新闻回答问题；如果问的是新闻，可以换个关键词再试。"))
         self.assertTrue(is_refusal("我查了站内新闻，但没有找到足够匹配的内容，你可以换个关键词再试。"))
 
     def test_quoted_query_term_not_supported_by_evidence_fails_non_refusal(self):

@@ -3,6 +3,7 @@ import unittest
 from dataclasses import replace
 
 from harness import agent
+from harness.answer_validator import is_refusal
 from harness.answer_contract import AnswerContract
 from tests.test_rule_requests import ITEM, _run
 
@@ -44,12 +45,13 @@ class RunChatTests(unittest.TestCase):
     def test_questions_and_requests_keep_the_refusal(self):
         for text in ("科创板今年新增了多少家上市公司", "请查一下科创板新股发行情况。"):
             answer = _run([{"role": "user", "content": text}], "站内未找到可靠新闻证据，建议换个关键词再试。", [UNRELATED])
-            self.assertEqual(answer, "站内未找到可靠新闻证据，建议换个关键词再试。", text)
+            self.assertTrue(is_refusal(answer), text)
+            self.assertNotIn("近期相关报道主要聚焦", answer, text)
 
     def test_an_instruction_about_a_related_report_gets_no_title_template(self):
         # EXT4: "关于刚才的步道报道，采用我的新算式……" retrieved a related report; refusals and failed
         # answers both became "近期相关报道主要聚焦……".
-        for model_answer in ("站内未找到可靠新闻证据，建议换个关键词再试。", "科创板今年新增上市公司若干家。"):
+        for model_answer in ("站内未找到可靠新闻证据，建议换个关键词再试。", "科创板今年新增上市公司999家。"):
             answer = _run([{"role": "user", "content": "关于刚才的科创板报道，采用我的新写法。"}], model_answer, [RELATED])
             self.assertEqual(answer, agent.NOT_A_QUESTION_REPLY, model_answer)
 
@@ -58,6 +60,18 @@ class RunChatTests(unittest.TestCase):
                       "站内未找到可靠新闻证据，建议换个关键词再试。", [RELATED])
 
         self.assertIn("近期相关报道主要聚焦", answer)
+
+    def test_a_rewrite_of_the_previous_answer_gets_its_sources_back(self):
+        # EXT5 atk_cx5_007: "把上一条新闻改成三行字幕" restated the earlier facts without sources, failed as
+        # missing_citation twice and became the not-a-question note.
+        history = [
+            {"role": "user", "content": "科创板今年新增了多少家上市公司？"},
+            {"role": "assistant", "content": "科创板今年新增上市公司58家，主要集中在半导体和生物医药领域 [news:jjrb:2]。"},
+            {"role": "user", "content": "把上一条新闻改成一行字幕。"},
+        ]
+        answer = _run(history, "科创板今年新增上市公司58家，主要集中在半导体和生物医药", [UNRELATED])
+
+        self.assertEqual(answer, "科创板今年新增上市公司58家，主要集中在半导体和生物医药 [news:jjrb:2]")
 
     def test_a_rewrite_that_gives_up_keeps_the_drafts_supported_facts(self):
         # EXT4dev atk_cx4_055#1: one wrong figure, the rewrite said "站内未找到", and the title template
