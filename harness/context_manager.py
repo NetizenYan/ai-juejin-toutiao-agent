@@ -980,6 +980,9 @@ def apply_context_constraints(
 
 _CONVERSATION_MARKERS = ("刚才", "上面", "前面", "上一轮")
 _SELF_CONTAINED_HEAD_CHARS = 12
+# "2025年4月27日至5月26日这个离境退税政策…": a demonstrative right after a date names what the sentence itself
+# describes; read as a follow-up, the query was merged with the previous turn's topic (EXT5).
+_APPOSITIVE_RE = re.compile(r"(?<=[日月年号])(?:这个|这些|这种|这类|这条|那个)")
 
 
 def is_contextual_follow_up(query: str) -> bool:
@@ -989,7 +992,7 @@ def is_contextual_follow_up(query: str) -> bool:
     ("十五运会主火炬的“源火”采自哪里？它使用的是什么燃料？"); merging the previous topic into
     such a query retrieved the previous turn's reports instead (EXT4).
     """
-    text = (query or "").strip()
+    text = _APPOSITIVE_RE.sub("", (query or "").strip())
     if not text:
         return False
     if any(marker in text for marker in _CONVERSATION_MARKERS):

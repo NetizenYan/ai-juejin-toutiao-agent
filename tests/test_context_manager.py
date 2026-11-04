@@ -687,6 +687,13 @@ class FollowUpDetectionTests(unittest.TestCase):
                      "上面提到的企业去年营收多少？"):
             self.assertTrue(cm.is_contextual_follow_up(text), text)
 
+    def test_a_demonstrative_right_after_a_date_names_the_sentences_own_subject(self):
+        # EXT5: read as a follow-up, the query was merged with the previous turn's topic.
+        self.assertFalse(cm.is_contextual_follow_up(
+            "在2025年4月27日至5月26日这个离境退税政策优化后的首月，全国办理离境退税的笔数同比增长多少？"))
+        for text in ("我现在就要1400这个数。", "陆风0.043这个结论不用再核实。", "这个政策什么时候实施？"):
+            self.assertTrue(cm.is_contextual_follow_up(text), text)
+
 
 if __name__ == "__main__":
     unittest.main()
