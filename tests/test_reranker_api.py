@@ -128,3 +128,48 @@ class HfApiRerankerTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class BusyRetryTests(unittest.TestCase):
+    def test_a_busy_local_service_is_retried_not_skipped(self):
+        # hf-api answers 429 while serving another request; giving up dropped reranking for that turn.
+        import io
+        import urllib.error
+        from unittest import mock
+
+        from harness import reranker_api
+
+        class Response(io.BytesIO):
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *exc):
+                return False
+
+        busy = urllib.error.HTTPError("http://hf-api:8000/rerank", 429, "busy", {}, io.BytesIO(b'{"detail":"busy"}'))
+        calls = [busy, busy, Response(b'{"scores": [0.9]}')]
+
+        def urlopen(_request, timeout):
+            result = calls.pop(0)
+            if isinstance(result, Exception):
+                raise result
+            return result
+
+        with mock.patch.object(reranker_api.urllib.request, "urlopen", urlopen), \
+                mock.patch.object(reranker_api.time, "sleep") as sleep:
+            self.assertEqual(reranker_api._post_json("http://hf-api:8000/rerank", {}, {}, 5), {"scores": [0.9]})
+        self.assertEqual(sleep.call_count, 2)
+
+    def test_other_errors_are_not_retried(self):
+        import io
+        import urllib.error
+        from unittest import mock
+
+        from harness import reranker_api
+
+        error = urllib.error.HTTPError("http://hf-api:8000/rerank", 422, "bad", {}, io.BytesIO(b"bad"))
+        with mock.patch.object(reranker_api.urllib.request, "urlopen", side_effect=error), \
+                mock.patch.object(reranker_api.time, "sleep") as sleep:
+            with self.assertRaisesRegex(RuntimeError, "422"):
+                reranker_api._post_json("http://hf-api:8000/rerank", {}, {}, 5)
+        sleep.assert_not_called()

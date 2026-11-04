@@ -49,18 +49,27 @@ def _document_text(item: dict[str, Any], *, max_chars: int = DEFAULT_DOCUMENT_MA
     return text
 
 
+# The local hf-api serves one request at a time and answers 429 "GPU service is busy" to the rest; giving up
+# fell back to recall order, so two concurrent eval workers silently lost reranking on some turns.
+BUSY_RETRIES = int(os.getenv("RERANKER_API_BUSY_RETRIES", "20"))
+
+
 def _post_json(url: str, headers: dict[str, str], payload: dict[str, Any], timeout: float) -> dict[str, Any]:
     data = json.dumps(payload, ensure_ascii=False).encode("utf-8")
-    request = urllib.request.Request(url, data=data, headers=headers, method="POST")
-    try:
-        with urllib.request.urlopen(request, timeout=timeout) as response:  # noqa: S310 - user-configured API endpoint.
-            raw = response.read().decode("utf-8", errors="replace")
-    except urllib.error.HTTPError as exc:
-        body = exc.read().decode("utf-8", errors="replace")[:300]
-        raise RuntimeError(f"rerank api http {exc.code}: {body}") from exc
-    except urllib.error.URLError as exc:
-        raise RuntimeError(f"rerank api network error: {exc.reason}") from exc
-    return json.loads(raw)
+    for attempt in range(BUSY_RETRIES + 1):
+        request = urllib.request.Request(url, data=data, headers=headers, method="POST")
+        try:
+            with urllib.request.urlopen(request, timeout=timeout) as response:  # noqa: S310 - user-configured API endpoint.
+                return json.loads(response.read().decode("utf-8", errors="replace"))
+        except urllib.error.HTTPError as exc:
+            if exc.code == 429 and attempt < BUSY_RETRIES:
+                time.sleep(min(0.25 * (attempt + 1), 2.0))
+                continue
+            body = exc.read().decode("utf-8", errors="replace")[:300]
+            raise RuntimeError(f"rerank api http {exc.code}: {body}") from exc
+        except urllib.error.URLError as exc:
+            raise RuntimeError(f"rerank api network error: {exc.reason}") from exc
+    raise AssertionError("unreachable")
 
 
 def _fallback(items: list[dict[str, Any]], top_k: int, reason: str) -> tuple[list[dict[str, Any]], dict[str, Any]]:
