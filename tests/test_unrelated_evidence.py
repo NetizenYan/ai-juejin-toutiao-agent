@@ -120,3 +120,24 @@ class RunChatTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class TwoWayRerankTests(unittest.TestCase):
+    # EXT6: "…已从4月1日起施行，它给维修企业新增了什么权限？" was read as a follow-up; the previous turn's
+    # topic took over retrieval and this turn's report was lost.
+    def _item(self, ident, score):
+        return {"id": ident, "chunk_index": 0, "chunk_text": ident, "rerank_score": score}
+
+    def test_a_chunk_scored_high_only_against_the_question_as_asked_comes_first(self):
+        merged = [self._item("previous_topic", 0.9), self._item("this_turn", 0.1)]
+        asked = [self._item("this_turn", 0.99), self._item("previous_topic", 0.2)]
+
+        ranked = agent._two_way_rerank(merged, asked)
+
+        self.assertEqual([it["id"] for it in ranked], ["this_turn", "previous_topic"])
+        self.assertEqual(ranked[1]["rerank_score"], 0.9)
+
+    def test_without_scores_the_merged_order_stands(self):
+        merged = [self._item("a", 0.9), {"id": "b", "chunk_index": 0, "chunk_text": "b"}]
+
+        self.assertIs(agent._two_way_rerank(merged, [self._item("b", 0.99)]), merged)

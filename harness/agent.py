@@ -525,6 +525,32 @@ def _question_constraint(question: str):
     return allowed
 
 
+# Only a question this long is searched as asked as well: a real follow-up is short ("那这和科技创新有什么关系？",
+# whose bare words pulled up unrelated 科技创新 reports), a misread one is a full question (60+ characters).
+SELF_CONTAINED_QUERY_CHARS = 20
+
+
+def _chunk_key(item: dict) -> tuple:
+    return (item.get("evidence_id") or item.get("id"), item.get("chunk_index"), item.get("chunk_text"))
+
+
+def _two_way_rerank(merged: list[dict], asked: list[dict]) -> list[dict]:
+    """Each chunk keeps the better of its scores against the merged follow-up query and the question as asked.
+
+    "它" in "…提到哪项办法已从4月1日起施行，它给维修企业新增了什么权限？" refers inside the question, but it was
+    read as a follow-up and the previous turn's topic took over retrieval (EXT6, both runs). A real follow-up
+    ("那它的产量呢？") scores low against the bare question, so its merged scores still decide.
+    """
+    if not asked or any(item.get("rerank_score") is None for item in [*merged, *asked]):
+        return merged
+    best = {_chunk_key(item): item for item in merged}
+    for item in asked:
+        key = _chunk_key(item)
+        if key not in best or item["rerank_score"] > best[key]["rerank_score"]:
+            best[key] = item
+    return sorted(best.values(), key=lambda item: item["rerank_score"], reverse=True)
+
+
 def _merge_retrieval_results(tool_results: list[dict], question: str = "") -> None:
     """Pool the chunks of every retrieve_news call into the first one, so they are reranked once
     against the question and the evidence pack keeps RAG_TOP items instead of RAG_TOP per call.
@@ -2064,6 +2090,9 @@ async def run_chat(history_messages: list[dict], db: Optional[AsyncSession] = No
     session_context: SessionContext | None = None
     effective_history = history_messages
     retrieval_user = latest_user
+    # The question as asked, when a follow-up merge rewrote it for retrieval: searched and scored as well, so
+    # a message misread as a follow-up still finds its own reports (see _two_way_rerank).
+    original_query = ""
     carryover_evidence_ids: list[str] = []
     if settings.context_manager_enabled:
         session_context = build_session_context(
@@ -2093,6 +2122,12 @@ async def run_chat(history_messages: list[dict], db: Optional[AsyncSession] = No
                 strip_turn_reference(clean_retrieval_query(latest_user)),
             ) if part)
             carryover_evidence_ids = list(referenced.get("evidence_refs") or [])[:settings.context_max_recent_evidence_ids]
+        asked = clean_retrieval_query(latest_user)
+        if (
+            not referenced and asked and asked != retrieval_user and is_contextual_follow_up(asked)
+            and len(re.sub(r"[\W_]+", "", asked)) >= SELF_CONTAINED_QUERY_CHARS
+        ):
+            original_query = asked
         if long_term_memory:
             # Lowest priority: this message > this session > long-term preferences. Not evidence.
             session_context.active_constraints = {
@@ -2180,6 +2215,11 @@ async def run_chat(history_messages: list[dict], db: Optional[AsyncSession] = No
                         call["arguments"]["limit"] = RAG_RECALL
                         if carryover_evidence_ids:
                             call["arguments"]["carryover_evidence_ids"] = carryover_evidence_ids
+                if original_query:
+                    calls += [
+                        {"name": "retrieve_news", "arguments": {"query": original_query, "limit": RAG_RECALL}}
+                        for call in calls[:1] if call["name"] == "retrieve_news"
+                    ]
                 tool_results = await _execute_calls(session, db, calls, audit_message_id)
         except Exception as exc:  # noqa: BLE001 - a broken MCP session (e.g. torn down after a tool timeout) must not kill the reply
             logger.warning("MCP session for intent %s failed: %r", intent, exc)
@@ -2197,12 +2237,16 @@ async def run_chat(history_messages: list[dict], db: Optional[AsyncSession] = No
         if result.get("tool") == "retrieve_news" and result.get("more_chunks"):
             # Another chunk of a top article, for the second half of the question (see rag_search._more_chunks).
             result["items"] = [*(result.get("items") or []), *result.pop("more_chunks")]
-    _merge_retrieval_results(tool_results, retrieval_user)
+    # The question as asked keeps its own date window: the merged query carried the previous turn's date and
+    # dropped this turn's report (EXT6, "2026年6月10日…新能源车维修" after a 2026年5月20日 question).
+    _merge_retrieval_results(tool_results, original_query or retrieval_user)
     for result in tool_results:
         if result.get("tool") == "retrieve_news" and result.get("items"):
             rerank_query = str(result.get("_ocr_compare_query") or retrieval_user)
             # 先精排全部 chunk，再与召回分融合（只看精排会丢掉召回排第 1 的答案），取前 25
             reranked = await rerank(rerank_query, result["items"], top_k=len(result["items"]))
+            if original_query and not result.get("_ocr_compare_query"):
+                reranked = _two_way_rerank(reranked, await rerank(original_query, result["items"], top_k=len(result["items"])))
             reranked = fuse_with_recall(reranked, settings.rerank_fusion_weight)[:25]
             reranked = _boost_carryover_ranked_items(
                 reranked,
