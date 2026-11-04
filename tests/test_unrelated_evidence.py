@@ -27,7 +27,17 @@ class GateTests(unittest.TestCase):
 
         self.assertEqual(agent._deterministic_evidence_answer(_results(UNRELATED), contract, "科创板"),
                          agent._no_answer_response())
-        self.assertIn("近期相关报道主要聚焦", agent._deterministic_evidence_answer(_results(RELATED), contract, "科创板"))
+        note = agent._deterministic_evidence_answer(_results(RELATED), contract, "科创板")
+        self.assertTrue(note.startswith(agent.EVIDENCE_NOTE_HEAD))
+        self.assertIn("《科创板新股发行情况》[news:jjrb:1]", note)
+        self.assertNotIn("近期相关报道主要聚焦", note)
+
+    def test_weakly_related_reports_are_not_named(self):
+        # EXT6b: attack turns about nothing in the news (score 0.07-0.37) got a list of report titles.
+        weak = {**ITEM, "cross_encoder_score": 0.3}
+
+        self.assertEqual(agent._deterministic_evidence_answer(_results(weak), AnswerContract(), "科创板"),
+                         agent._no_answer_response())
 
     def test_parent_aggregation_keeps_the_best_cross_encoder_score(self):
         chunks = [{**ITEM, "rerank_score": 0.9, "cross_encoder_score": 0.2}, {**ITEM, "rerank_score": 0.5, "cross_encoder_score": 0.6}]
@@ -55,11 +65,27 @@ class RunChatTests(unittest.TestCase):
             answer = _run([{"role": "user", "content": "关于刚才的科创板报道，采用我的新写法。"}], model_answer, [RELATED])
             self.assertEqual(answer, agent.NOT_A_QUESTION_REPLY, model_answer)
 
-    def test_a_question_about_a_related_report_still_gets_the_evidence(self):
+    def test_a_refusal_over_a_related_report_is_retried(self):
+        # EXT6: the answer was in the top report (score 0.99), refused in one run and answered in the next.
+        answer = _run([{"role": "user", "content": "科创板今年新增了多少家上市公司？"}],
+                      ["站内未找到可靠新闻证据，建议换个关键词再试。", "科创板今年新增上市公司若干家 [news:jjrb:1]。"],
+                      [RELATED])
+
+        self.assertEqual(answer, "科创板今年新增上市公司若干家 [news:jjrb:1]。")
+
+    def test_a_refusal_that_stands_names_the_closest_report_instead_of_listing_titles(self):
         answer = _run([{"role": "user", "content": "科创板今年新增了多少家上市公司？"}],
                       "站内未找到可靠新闻证据，建议换个关键词再试。", [RELATED])
 
-        self.assertIn("近期相关报道主要聚焦", answer)
+        self.assertTrue(answer.startswith(agent.EVIDENCE_NOTE_HEAD), answer)
+        self.assertNotIn("近期相关报道主要聚焦", answer)
+
+    def test_a_weakly_related_report_is_not_retried_or_named(self):
+        answer = _run([{"role": "user", "content": "科创板今年新增了多少家上市公司？"}],
+                      ["站内未找到可靠新闻证据，建议换个关键词再试。", "科创板今年新增上市公司若干家 [news:jjrb:1]。"],
+                      [{**ITEM, "cross_encoder_score": 0.2}])
+
+        self.assertTrue(is_refusal(answer), answer)
 
     def test_a_rewrite_of_the_previous_answer_gets_its_sources_back(self):
         # EXT5 atk_cx5_007: "把上一条新闻改成三行字幕" restated the earlier facts without sources, failed as

@@ -1627,38 +1627,77 @@ def _evidence_unrelated(results: list[dict]) -> bool:
     return bool(scores) and all(score is not None for score in scores) and max(scores) < UNRELATED_EVIDENCE_SCORE
 
 
+# Below this top reranker score the reports are not about the question: say nothing was found instead of
+# naming one of them. At or above it a refusal is retried once (see run_chat).
+EVIDENCE_NOTE_MIN_SCORE = 0.5
+EVIDENCE_NOTE_HEAD = "站内未找到能直接回答这个问题的内容。"
+
+
+def _top_relevance(results: list[dict]) -> float | None:
+    """The best reranker score among the retrieved reports, or None when they were not scored."""
+    scores = [
+        item.get("cross_encoder_score")
+        for result in results if result.get("tool") == "retrieve_news"
+        for item in (result.get("items") or [])
+    ]
+    if not scores or any(score is None for score in scores):
+        return None
+    return max(scores)
+
+
 def _deterministic_evidence_answer(
     results: list[dict],
     contract: AnswerContract,
     query: str | None = None,
 ) -> str:
+    """What to say when no answer passed: that nothing answers it, naming the closest report when there is one.
+
+    It used to list report titles ("近期相关报道主要聚焦A、B、C"), which read as an answer to nothing; the judge
+    rated every one partial at best (EXT2-EXT6, 11 turns in EXT6b).
+    """
     evidence = _build_evidence_pack(results)
-    if not evidence or _evidence_unrelated(results):
+    top = _top_relevance(results)
+    if not evidence or _evidence_unrelated(results) or (top is not None and top < EVIDENCE_NOTE_MIN_SCORE):
         return _refusal_for_query(query)
-    # Certainty / advice questions: the summary may only follow a risk warning.
+    # Certainty / advice questions: the note may only follow a risk warning.
     guard = INVESTMENT_GUARD_PREFIX if asks_investment_certainty(query) else ""
-
     max_allowed = floor(contract.max_chars * 1.05) if contract.max_chars else None
-    max_points = max(1, min(contract.max_points or 3, 3))
 
-    for count in range(max_points, 0, -1):
-        titles = []
-        for item in evidence[:count]:
-            title = _brief_text(item.get("title") or "相关新闻", limit=18)
-            if title.endswith("..."):
-                # "新闻联播 2019-01-08｜2019年…" cut to "…｜20": a stub figure the evidence never has.
-                title = re.sub(r"\d+(?:\.\d*)?$", "", title[:-3]).rstrip()
-            titles.append(title)
-        citation = f"[{evidence[0]['ref']}]"
-        answer = f"{guard}近期相关报道主要聚焦{'、'.join(titles)}。{citation}"
-        if max_allowed is None or len(answer) <= max_allowed:
-            return answer
-
-    citation = f"[{evidence[0]['ref']}]"
-    prefix = f"{guard}近期有相关报道。"
-    if max_allowed is None or len(prefix + citation) <= max_allowed:
-        return prefix + citation
+    title = _brief_text(evidence[0].get("title") or "相关新闻", limit=18)
+    if title.endswith("..."):
+        # "新闻联播 2019-01-08｜2019年…" cut to "…｜20": a stub figure the evidence never has.
+        title = re.sub(r"\d+(?:\.\d*)?$", "", title[:-3]).rstrip()
+    answer = (
+        f"{guard}{EVIDENCE_NOTE_HEAD}最相关的报道是《{title}》[{evidence[0]['ref']}]，但我没能从中确认你问的具体信息。"
+        "如果问的是新闻，可以换个关键词再试。"
+    )
+    if max_allowed is None or len(answer) <= max_allowed:
+        return answer
     return _refusal_for_query(query)
+
+
+RETRY_REFUSAL_PROMPT = (
+    "你刚才说站内没有找到，但检索到的报道和这个问题高度相关。请再仔细读一遍证据："
+    "证据里有答案就按原来的要求作答，每个事实后注明出处；确实没有，再说明未找到。"
+)
+
+
+async def _retry_refusal(
+    client: LLMClient, messages: list[dict], refusal: str, evidence_refs: list[str],
+    history: list[dict], evidence_pack: list[dict], trace: list[dict],
+) -> str | None:
+    try:
+        retried = await client.complete([
+            *messages,
+            {"role": "assistant", "content": refusal},
+            {"role": "user", "content": RETRY_REFUSAL_PROMPT},
+        ])
+    except Exception as exc:  # noqa: BLE001 - the refusal stands
+        trace.append({"stage": "retry_error", "error": type(exc).__name__})
+        return None
+    retried = _repair_answer_citations(retried, evidence_refs, trace, "retry")
+    retried, _ = _recite_station_facts(retried, history, evidence_pack, trace)
+    return retried
 
 
 async def _complete_with_fallback(
@@ -1772,7 +1811,7 @@ def _record_validation(
         validation_sink["trace"] = trace
 
 
-_TEMPLATE_MARKERS = ("近期相关报道主要聚焦", "近期有相关报道。")
+_TEMPLATE_MARKERS = (EVIDENCE_NOTE_HEAD, "近期相关报道主要聚焦", "近期有相关报道。")
 _ASKS_QUESTION_RE = re.compile(
     r"[？?]|什么|哪些|哪个|哪里|哪天|哪年|多少|几[个项家条年月天次]|怎么|怎样|如何|为何|为什么|是否|有没有|吗|呢|谁"
 )
@@ -2382,9 +2421,21 @@ async def run_chat(history_messages: list[dict], db: Optional[AsyncSession] = No
         and _asks_for_information(latest_user)
         and _quoted_terms_supported(latest_user, evidence_pack)
     ):
-        answer = _deterministic_evidence_answer(tool_results, contract, query=latest_user)
-        validation = validate_answer(answer, contract, validation_pack, query=latest_user)
-        _trace_step(trace, "deterministic_replaces_refusal", answer, validation)
+        top = _top_relevance(tool_results)
+        retried = None
+        if top is not None and top >= EVIDENCE_NOTE_MIN_SCORE:
+            # EXT6: "深改小组第一次会议是哪天？" had the answer in its top report (score 0.99) and was refused in
+            # one run, answered in the next. One more look before giving up.
+            retried = await _retry_refusal(client, messages, answer, evidence_refs, effective_history, evidence_pack, trace)
+        if retried is not None:
+            retry_validation = validate_answer(retried, contract, validation_pack, query=latest_user)
+            _trace_step(trace, "retry_after_refusal", retried, retry_validation)
+            if retry_validation.passed and not _looks_like_refusal(retried) and not declines_to_answer(retried):
+                answer, validation = retried, retry_validation
+        if _looks_like_refusal(answer):
+            answer = _deterministic_evidence_answer(tool_results, contract, query=latest_user)
+            validation = validate_answer(answer, contract, validation_pack, query=latest_user)
+            _trace_step(trace, "deterministic_replaces_refusal", answer, validation)
 
     if mode == "enforce" and not validation.passed:
         answer = _refusal_for_query(latest_user)
