@@ -157,7 +157,10 @@ def run_item(item: dict[str, Any], host: str, port: int, token: str, sse_timeout
         session_id = done.get("sessionId") or session_id
         records.append({"turn": turn["turn"], "answer": chat.get("answer") or "", "evidence": done.get("evidence") or [],
                         "validation": done.get("validation"), "latency_ms": round((time.perf_counter() - start) * 1000),
-                        "error": error})
+                        "error": error,
+                        # Each stage's draft (initial, rewrite, rule replacement ...); only sent when the backend runs
+                        # with ANSWER_VALIDATION_EXPOSE_INTERNAL_DETAILS=true. Without it a replaced answer can't be explained.
+                        "trace": done.get("validationTrace")})
     _status, memory = _request_json(host, port, "GET", "/api/ai/memory", token)
     return {"id": item["id"], "session_id": session_id, "records": records, "memory_after": memory}
 
@@ -305,6 +308,33 @@ def cmd_score(args: argparse.Namespace) -> None:
     print("needs judge:", sum(r["rule_verdict"] is None for r in rows))
 
 
+def cmd_show(args: argparse.Namespace) -> None:
+    """Print each stage of the named turns, e.g. `show results.jsonl atk_cx6_160#5`."""
+    wanted = {}
+    for key in args.keys:
+        seed, _, turn = key.partition("#")
+        wanted.setdefault(seed, set()).add(int(turn) if turn else None)
+    for path in args.results:
+        for line in Path(path).read_text(encoding="utf-8").splitlines():
+            item = json.loads(line) if line.strip() else {}
+            turns = wanted.get(item.get("id"))
+            if turns is None:
+                continue
+            for record in item["records"]:
+                if None not in turns and record["turn"] not in turns:
+                    continue
+                print(f"===== {item['id']}#{record['turn']}  ({path})")
+                trace = record.get("trace")
+                if not trace:
+                    print("  (no trace: run the backend with ANSWER_VALIDATION_EXPOSE_INTERNAL_DETAILS=true)")
+                for step in trace or []:
+                    status = "pass" if step.get("passed") else "fail"
+                    violations = ",".join(step.get("violations") or [])
+                    print(f"  [{step.get('stage')}] {status} {violations} {step.get('chars')} chars")
+                    print("    " + (step.get("preview") or "").replace("\n", "\n    "))
+                print("  [final] " + (record.get("answer") or "").replace("\n", "\n    "))
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     sub = parser.add_subparsers(dest="cmd", required=True)
@@ -324,8 +354,13 @@ def main() -> None:
     score.add_argument("--scored", default="reports/drift_scored.jsonl")
     score.add_argument("--attacks", nargs="+", default=[str(ATTACKS)], help="attack seed files the results came from")
     score.add_argument("--carriers", default=str(CARRIER_SOURCE), help="carrier gold file the run used")
+    show = sub.add_parser("show", help="print each stage of some turns: show results.jsonl atk_cx6_160#5 [seed ...]")
+    show.add_argument("results", nargs="+", help="result files, then seed ids or seed#turn keys")
     args = parser.parse_args()
-    cmd_run(args) if args.cmd == "run" else cmd_score(args)
+    if args.cmd == "show":
+        args.keys = [value for value in args.results if not value.endswith(".jsonl")]
+        args.results = [value for value in args.results if value.endswith(".jsonl")]
+    {"run": cmd_run, "score": cmd_score, "show": cmd_show}[args.cmd](args)
 
 
 if __name__ == "__main__":

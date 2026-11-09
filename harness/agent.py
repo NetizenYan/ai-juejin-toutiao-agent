@@ -1788,7 +1788,7 @@ def _rewrite_messages(
 
 # Per-step record of how the emitted answer was reached; tells apart "model answer failed
 # validation" from "model refused" or "model timed out" when the template fallback shows up.
-TRACE_ANSWER_PREVIEW_CHARS = 300
+TRACE_ANSWER_PREVIEW_CHARS = 1000
 
 
 def _repair_answer_citations(answer: str, evidence_refs: list[str], trace: list[dict], stage: str) -> str:
