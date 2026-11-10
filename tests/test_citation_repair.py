@@ -35,6 +35,19 @@ class CitationRepairTests(unittest.TestCase):
         fixed, _ = repair_citations("[news:rmrb:aaaaaaaaaaaaaaab]", refs)
         self.assertEqual(fixed, "[news:rmrb:aaaaaaaaaaaaaaab]")
 
+    def test_a_tag_naming_no_report_is_removed(self):
+        for tag in ("[news:无]", "[news:]", "[news: none ]", "[news:N/A]"):
+            fixed, repairs = repair_citations(f"上一轮没有生成那张表 {tag}。", REFS)
+            self.assertEqual(fixed, "上一轮没有生成那张表。", tag)
+            self.assertEqual(repairs[0]["kind"], "empty")
+
+    def test_the_format_placeholder_is_not_left_looking_like_a_citation(self):
+        fixed, repairs = repair_citations("新闻事实后面都要保留 [news:ID] 出处标注。", REFS)
+
+        self.assertEqual(fixed, "新闻事实后面都要保留 [news:编号] 出处标注。")
+        self.assertEqual(repairs[0]["kind"], "placeholder")
+        self.assertEqual(repair_citations("[news:6531]", REFS), ("[news:6531]", []))
+
 
 if __name__ == "__main__":
     unittest.main()

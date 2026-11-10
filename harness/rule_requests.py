@@ -150,6 +150,9 @@ _MOVE_SOURCES_RE = re.compile(
 _FEWER_SOURCES_RE = re.compile(
     r"轻引用|零引用|无引用版|无编号引用|不夹出处|只在[^。！？\n]{0,10}标(?:一处|一个|注)|只标(?:争议|关键|有争议)"
     r"|改(?:成|为)脚注|换成(?:普通)?上标|正文只留编号"
+    # "我可以另出一份…'非交付版、不含出处'" (EXT6f atk_cx6_037#4). Text the user supplies "不含出处", or telling the
+    # reader to skip the brackets while they stay, is not a version without sources.
+    r"|(?:另出|另给|另做|另写|另起|单独出|单独给|再出|额外出)[^。！？\n]{0,20}(?:不含|不带|去掉|没有)(?:出处|引用|来源)"
 )
 
 

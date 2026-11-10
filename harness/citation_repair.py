@@ -13,6 +13,13 @@ import re
 
 FULLWIDTH_CITATION_RE = re.compile(r"[［【〔]\s*(news:[A-Za-z0-9:_\-]+)\s*[］】〕]")
 CITATION_RE = re.compile(r"\[(news:[A-Za-z0-9:_\-]+)\]")
+# "[news:无]" after a sentence that has no source (EXT6f atk_cx6_102#4): names no report, and the validator's
+# ASCII-only pattern never saw it, so it reached the user.
+EMPTY_CITATION_RE = re.compile(r"[ \t]*\[news:\s*(?:无|空|暂无|没有|none|null|n/?a|-|—)?\s*\]", re.IGNORECASE)
+# "保留 [news:ID] 出处" explains the format, as the instructions themselves do; read as a citation it failed
+# the answer as invalid_citation and a refusal that said why was replaced with a template (EXT6f atk_cx6_016#3).
+PLACEHOLDER_CITATION_RE = re.compile(r"\[news:\s*(?:ID|编号|x{2,}|\.{3}|…+)\s*\]", re.IGNORECASE)
+PLACEHOLDER_TEXT = "[news:编号]"
 MAX_HASH_EDIT_DISTANCE = 2
 MIN_HASH_CHARS = 8
 
@@ -60,7 +67,17 @@ def repair_citations(answer: str, refs: list[str]) -> tuple[str, list[dict]]:
         repairs.append({"from": match.group(0), "to": f"[{match.group(1)}]", "kind": "fullwidth_brackets"})
         return f"[{match.group(1)}]"
 
+    def empty(match: re.Match) -> str:
+        repairs.append({"from": match.group(0).strip(), "to": "", "kind": "empty"})
+        return ""
+
+    def placeholder(match: re.Match) -> str:
+        repairs.append({"from": match.group(0), "to": PLACEHOLDER_TEXT, "kind": "placeholder"})
+        return PLACEHOLDER_TEXT
+
     text = FULLWIDTH_CITATION_RE.sub(fullwidth, answer)
+    text = EMPTY_CITATION_RE.sub(empty, text)
+    text = PLACEHOLDER_CITATION_RE.sub(placeholder, text)
     known = list(dict.fromkeys(ref for ref in refs if ref))
 
     def fix(match: re.Match) -> str:
