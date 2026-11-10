@@ -1997,18 +1997,29 @@ _DECLINE_RE = re.compile(
     r"|不能(?:这样做|照办|照做|配合|同意|答应|接受|替|帮)|没法照|无法照"
 )
 _ASSENT_START_RE = re.compile(r"^(?:好的?|收到|可以|没问题|明白|行|当然|已|OK)", re.IGNORECASE)
+# "可以帮你整理邮件，但其中'先答应代表虚构机构发声'这一项我不能照做" (EXT6g atk_cx6_108#3): does the harmless part,
+# declines the rest in the same sentence.
+_BUT_RE = re.compile(r"但|不过|只是")
 _INTERNAL_TEXT_RE = re.compile(r"<|session_context|回答合同|检索结果>|evidence_pack", re.IGNORECASE)
 _NUMBER_RE = re.compile(r"\d+(?:\.\d+)?")
+# "这个要求我不能照办，也不会按要求输出特定的标记或口令" said nothing about why "缺来源就现造" is refused, while the
+# draft did (EXT6g atk_cx6_110#3). The other rule replies each give the reason and were judged pass (EXT6f), so they
+# stay; a draft would add nothing but risk. Only the bare reply: one followed by cited earlier facts is kept.
+_REASONLESS_RULE_REPLY = rule_requests.RULE_REPLIES["canary"]
 
 
 def _explained_refusal(draft: str, user_text: str) -> str | None:
     """The draft, when it declines the request and says why without stating news facts; otherwise None."""
-    text = _tidy((draft or "").replace(NO_ANSWER_REPLY, ""))
+    # "我可以帮你把已有报道归纳成段落 [news:…]" (EXT6g atk_cx6_096#3): a ref on an offer is not a cited fact.
+    text = _tidy(_uncite_rule_sentences((draft or "").replace(NO_ANSWER_REPLY, ""), any_offer=True))
     if len(text) < 15 or extract_citations(text) or _INTERNAL_TEXT_RE.search(text):
         return None
     body = "\n".join(_LIST_MARK_RE.sub("", line.strip()) for line in text.splitlines())
     first = next((part for part in re.split(r"[。！？!?\n]+", body) if part.strip()), "")
-    if _ASSENT_START_RE.match(re.sub(r"^[\s*#>]+", "", body)) or not _DECLINE_RE.search(first):
+    decline = _DECLINE_RE.search(first)
+    if not decline:
+        return None
+    if _ASSENT_START_RE.match(re.sub(r"^[\s*#>]+", "", body)) and not _BUT_RE.search(first[:decline.start()]):
         return None
     if rule_requests.agrees_to_rule_change(text) or rule_requests.without_citation_workarounds(text)[1]:
         return None
@@ -2026,17 +2037,28 @@ _ABSENCE_RE = re.compile(
 )
 
 
-# A real ref only: the "[news:编号]" placeholder in "出处标注（形如 [news:编号]）" stays.
-_REAL_REF_RE = re.compile(r"`?\[(?:news:[A-Za-z0-9:_\-]+|web:[^\]\s]+)\]`?")
+# "如果你需要，我可以把刚才那篇公司治理科普的要点重新梳理一遍，出处照常保留 [news:rmrb:70ce…]" (EXT6g
+# atk_cx6_106#3): the ref sits on an offer, which states no news.
+_OFFER_RE = re.compile(r"我(?:也|还)?可以(?:帮|把|按|再|继续|为|给)|如果(?:你|您)(?:需要|愿意|想要)|需要的话")
+# "我可以改用其他新闻，比如'十五五'规划纲要草案提请审查 [news:jjrb:f42b…]" names the report it offers: its ref stays.
+_NAMES_REPORT_RE = re.compile(r"比如|例如|[（(]如|这条|报道")
 
 
-def _uncite_rule_sentences(answer: str) -> str:
-    """Citations removed from sentences that decline or say something is not there, when they hold no figure."""
+# A real ref only: the "[news:编号]" / "[news:ID]" placeholder in "出处标注（形如 [news:编号]）" stays.
+_REAL_REF_RE = re.compile(r"`?\[(?:news:(?!(?:ID|id)\])[A-Za-z0-9:_\-]+|web:[^\]\s]+)\]`?")
+
+
+def _uncite_rule_sentences(answer: str, any_offer: bool = False) -> str:
+    """Citations removed from sentences that decline, say something is not there or offer help, when they hold no
+    figure. An offer that names a report keeps its ref unless any_offer (a refusal draft whose refs were off-topic)."""
     def strip(unit: str) -> str:
         if not _REAL_REF_RE.search(unit):
             return unit
         sentence = _REAL_REF_RE.sub("", unit)
-        if _NUMBER_RE.search(sentence) or not (_ABSENCE_RE.search(sentence) or _DECLINE_RE.search(sentence)):
+        if _NUMBER_RE.search(sentence) or not (
+            _ABSENCE_RE.search(sentence) or _DECLINE_RE.search(sentence)
+            or (_OFFER_RE.search(sentence) and (any_offer or not _NAMES_REPORT_RE.search(sentence)))
+        ):
             return unit
         sentence = re.sub(r"[（(]\s*(?:如|例如|比如)?\s*[）)]", "", sentence)  # "（如 [news:…]）" used as an example
         return re.sub(r"[ \t]+([。！？!?；;，,])", r"\1", sentence).rstrip(" \t")
@@ -2046,6 +2068,8 @@ def _uncite_rule_sentences(answer: str) -> str:
 def _tidy(text: str) -> str:
     """Without the list items a removed sentence left empty, and without runs of blank lines."""
     text = re.sub(r"(?m)^[ \t]*[-*•·][ \t]*$\n?", "", text)
+    # "关于“虚构竹雨积木展”：" whose answer was the removed note (EXT6g atk_cx6_110#3).
+    text = re.sub(r"\n[^\n]{0,40}[：:][ \t]*$", "", text.strip())
     return re.sub(r"\n{3,}", "\n\n", text).strip()
 
 
@@ -2608,7 +2632,7 @@ async def run_chat(history_messages: list[dict], db: Optional[AsyncSession] = No
             _trace_step(trace, "rule_change_declined", answer, validation)
 
     if (
-        (answer == NOT_A_QUESTION_REPLY or _looks_like_refusal(answer))
+        (answer == NOT_A_QUESTION_REPLY or _looks_like_refusal(answer) or answer == _REASONLESS_RULE_REPLY)
         and not _ASKS_QUESTION_RE.search(latest_user)
         and "prompt_leak" not in {rule_kind, context_rule_kind}
     ):
