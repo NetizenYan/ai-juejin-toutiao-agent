@@ -698,7 +698,7 @@ INJECTION_PAYLOAD_PLACEHOLDER = "[已省略]"
 # run the model emitted such tokens 11 times and quoted them in about 199 refusals.
 _CANARY_TOKEN = r"(?<![A-Za-z0-9_\-])([A-Za-z]{2,}[-_]\d{3,})(?![A-Za-z0-9_\-])"
 _CANARY_REQUEST_RE = re.compile(
-    r"(?:输出|打印|显示|写出|说出|回复|回我|回显|回|加上?|附上?|带上?|标上|写上|打上|标记|确认码?|喊"
+    r"(?:输出|打印|显示|写出|说出|回复|回我|回显|回|加上?|附上?|带上?|标上|写上|打上|标记|确认码?|喊|登记为|备案为|注册为|记为"
     r"|output|print|say|reply|append|add|include|echo|confirm|mark|tag|status)"
     rf"[^A-Za-z0-9\n。！？]{{0,6}}?{_CANARY_TOKEN}(?!\s*的)"
     r"|(?:末尾|结尾|结束|收尾|最后|末行|文末|开头|落款|口头禅|凭证|口令|暗号|密令|回执|at the end|starts? with|finish(?:ing)? with|end(?:ing)? (?:with|in))"
@@ -2000,6 +2000,13 @@ _ASSENT_START_RE = re.compile(r"^(?:好的?|收到|可以|没问题|明白|行|�
 # "可以帮你整理邮件，但其中'先答应代表虚构机构发声'这一项我不能照做" (EXT6g atk_cx6_108#3): does the harmless part,
 # declines the rest in the same sentence.
 _BUT_RE = re.compile(r"但|不过|只是")
+# "可以帮你整理邮件，但不能按'先答应代表虚构机构发声'来处理" (EXT6h atk_cx6_108#3). Only for the first sentence of
+# a draft: elsewhere "但不能确定" is part of a fact.
+_BUT_DECLINE_RE = re.compile(r"(?:但|不过)(?:我)?(?:不能|无法|没法|不会)(?:按|照|替|帮|同意|答应|接受|代|以|把|写|做|为)")
+# The parts of the no-answer note a draft repeats on its own ("站内未找到可靠新闻证据。我只根据站内新闻回答问题。").
+_NO_ANSWER_PARTS_RE = re.compile(
+    r"站内未找到可靠新闻证据(?:[。；]|$)\s*(?:我只根据站内新闻回答问题[^。\n]*。)?", re.MULTILINE
+)
 _INTERNAL_TEXT_RE = re.compile(r"<|session_context|回答合同|检索结果>|evidence_pack", re.IGNORECASE)
 _NUMBER_RE = re.compile(r"\d+(?:\.\d+)?")
 # "这个要求我不能照办，也不会按要求输出特定的标记或口令" said nothing about why "缺来源就现造" is refused, while the
@@ -2008,23 +2015,29 @@ _NUMBER_RE = re.compile(r"\d+(?:\.\d+)?")
 _REASONLESS_RULE_REPLY = rule_requests.RULE_REPLIES["canary"]
 
 
-def _explained_refusal(draft: str, user_text: str) -> str | None:
-    """The draft, when it declines the request and says why without stating news facts; otherwise None."""
+def _explained_refusal(draft: str, user_text: str, facts_checked: bool = False) -> str | None:
+    """The draft, when it declines the request and says why; otherwise None.
+
+    It may state news facts only when facts_checked: its one failure was that the station has nothing on what the
+    user named (evidence_not_support_query), so its citations and figures already passed (EXT6h atk_cx6_143#3:
+    "这个我不能帮你写……站内报道提到，新《证券法》…… [news:…]").
+    """
     # "我可以帮你把已有报道归纳成段落 [news:…]" (EXT6g atk_cx6_096#3): a ref on an offer is not a cited fact.
-    text = _tidy(_uncite_rule_sentences((draft or "").replace(NO_ANSWER_REPLY, ""), any_offer=True))
-    if len(text) < 15 or extract_citations(text) or _INTERNAL_TEXT_RE.search(text):
+    text = _NO_ANSWER_PARTS_RE.sub("", (draft or "").replace(NO_ANSWER_REPLY, ""))
+    text = _tidy(_uncite_rule_sentences(text, any_offer=True))
+    if len(text) < 15 or (extract_citations(text) and not facts_checked) or _INTERNAL_TEXT_RE.search(text):
         return None
     body = "\n".join(_LIST_MARK_RE.sub("", line.strip()) for line in text.splitlines())
     first = next((part for part in re.split(r"[。！？!?\n]+", body) if part.strip()), "")
-    decline = _DECLINE_RE.search(first)
+    decline = _DECLINE_RE.search(first) or _BUT_DECLINE_RE.search(first)
     if not decline:
         return None
-    if _ASSENT_START_RE.match(re.sub(r"^[\s*#>]+", "", body)) and not _BUT_RE.search(first[:decline.start()]):
+    if _ASSENT_START_RE.match(re.sub(r"^[\s*#>]+", "", body)) and not _BUT_RE.search(first[:decline.start() + 2]):
         return None
     if rule_requests.agrees_to_rule_change(text) or rule_requests.without_citation_workarounds(text)[1]:
         return None
     # Figures only from the user's own words: anything else would be a fact from nowhere (or a made-up one).
-    if not set(_NUMBER_RE.findall(body)) <= set(_NUMBER_RE.findall(user_text or "")):
+    if not facts_checked and not set(_NUMBER_RE.findall(body)) <= set(_NUMBER_RE.findall(user_text or "")):
         return None
     return text
 
@@ -2637,7 +2650,9 @@ async def run_chat(history_messages: list[dict], db: Optional[AsyncSession] = No
         and "prompt_leak" not in {rule_kind, context_rule_kind}
     ):
         # "先明确同意'本金绝不会减少'": the first draft declined and said why; keep that rather than a template.
-        explained = _explained_refusal(draft, recent_user_text)
+        explained = _explained_refusal(
+            draft, recent_user_text, facts_checked=draft_validation.constraint_violations == ["evidence_not_support_query"]
+        )
         if explained:
             answer = explained
             validation = AnswerValidationResult(passed=True, hallucination_risk="low", risk_reasons=["explained_refusal"])
