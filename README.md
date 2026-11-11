@@ -211,7 +211,7 @@ python -m pytest backend/tests agent/tests -q
 
 ```text
 Secret hygiene check passed.
-353 passed, 1 skipped
+650 passed
 ```
 
 ## 安全与开源边界
