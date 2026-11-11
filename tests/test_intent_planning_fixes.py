@@ -48,6 +48,14 @@ class IntentKeywordTests(unittest.TestCase):
                      "第37轮：随便聊一句，今天天气不错。", "detail 怎么翻译"):
             self.assertEqual(detect_intent(chat), "general_chat", chat)
 
+    def test_digits_around_a_sign_in_a_news_question_are_not_arithmetic(self):
+        # EXT6: "“3+3”模式高考" never searched, in five runs of the same question.
+        for question in ("2017年上海、浙江首次实行“3+3”模式高考时，三门自选科目分别是从几门科目中选出来的？",
+                         "1-9月全国规模以上工业增加值增长了多少？", "2014-01-22那天开了什么会？"):
+            self.assertEqual(detect_intent(question), "news_qa", question)
+        for chat in ("3+5等于几", "12乘以7是多少？", "帮我算一下 15*4", "7+8"):
+            self.assertEqual(detect_intent(chat), "general_chat", chat)
+
     def test_internet_and_iot_are_topics_not_a_request_to_go_online(self):
         # EXT5: "工业互联网…" / "卫星物联网…" matched "联网", went to web search and were refused every time.
         for question in ("2026年1月19日经济日报介绍的工业互联网与人工智能融合行动方案提出到哪一年？",
