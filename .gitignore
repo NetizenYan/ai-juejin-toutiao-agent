@@ -18,18 +18,18 @@ venv/
 
 # Node / frontend
 node_modules/
-apps/frontend/node_modules/
-apps/frontend/dist/
-apps/frontend/test-results/
-apps/frontend/.env
-apps/frontend/.env.*
-!apps/frontend/.env.example
+frontend/node_modules/
+frontend/dist/
+frontend/test-results/
+frontend/.env
+frontend/.env.*
+!frontend/.env.example
 
 # Logs, runtime state, and generated reports
 logs/
 locks/
 reports/
-eval/reports/
+agent/eval/reports/
 work/
 .cache/
 runtime_cache/
@@ -42,9 +42,9 @@ env_snapshots/
 *.pid
 
 # Raw news corpora (经济日报 CSV / 人民日报 xlsx / 新闻联播 zip, several GB). Never commit.
-data/raw/
-# Corpora derived from data/raw by scripts/build_econ_corpus.py (rebuildable).
-data/processed/
+backend/data/raw/
+# Corpora derived from backend/data/raw by backend/scripts/build_econ_corpus.py (rebuildable).
+backend/data/processed/
 
 # Local databases, dumps, and generated data
 *.db

@@ -27,7 +27,7 @@ Include:
 Do not commit `.env`, API keys, database passwords, cookies, private keys, dumps, logs, screenshots, or OCR captures. Run this before publishing changes:
 
 ```bash
-python scripts/security_secret_scan.py
+python backend/scripts/security_secret_scan.py
 ```
 
 GitHub secret scanning and push protection are enabled for the public repository.

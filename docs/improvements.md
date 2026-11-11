@@ -1,6 +1,6 @@
 # 工程与 Agent 流程提升点
 
-本文件总结 `ai-juejin-toutiao-agent` 相比"普通脚本 / 手工内容流程"的提升。所有结论均基于当前仓库的代码结构（`harness/`、`mcp_servers/`、`tests/`、`eval/`、`scripts/`），不使用未经测量的百分比指标。需要真实数据支撑的项统一归入第 6 节"仍待补充的指标"。
+本文件总结 `ai-juejin-toutiao-agent` 相比"普通脚本 / 手工内容流程"的提升。所有结论均基于当前仓库的代码结构（`agent/harness/`、`agent/mcp_servers/`、`tests/`、`agent/eval/`、`scripts/`），不使用未经测量的百分比指标。需要真实数据支撑的项统一归入第 6 节"仍待补充的指标"。
 
 > 配套阅读：[agent-architecture](agent-architecture.md)、[OPEN_SOURCE_ARCHITECTURE](OPEN_SOURCE_ARCHITECTURE.md)。
 
@@ -12,13 +12,13 @@
 - **先确认再回答**：模糊问题先由 `AnchorResolver` 给候选让用户确认，降低自信幻觉。
 - **工具边界清晰**：模型不直接碰 DB / 外网，只能经 MCP 受控工具，避免脚本式"模型直连数据库"的风险。
 - **站外内容降级**：Web/OCR 线索默认低可信，需与站内交叉核验（`EvidenceVerifier`），而非直接采信。
-- **可评测**：`eval/` 下有 RAG / Agent gold 测试集与评测脚本，效果变化可回归，而非靠人工主观判断。
+- **可评测**：`agent/eval/` 下有 RAG / Agent gold 测试集与评测脚本，效果变化可回归，而非靠人工主观判断。
 
 ## 2. 工程结构提升
 
-- **分层清晰**：`harness/`（Agent 编排）、`mcp_servers/`（工具边界进程）、`routers/` + `crud/` + `models/`（Web/数据访问）、`config/`（配置集中）、`eval/` + `tests/`（评测与测试）边界分明。
-- **配置与密钥分离**：全部走环境变量，`.env.example` 只含占位，`scripts/security_secret_scan.py` 做发布前密钥扫描。
-- **供应商可切换**：`llm_client` + `config/ai_conf.py` 屏蔽 LLM/embedding/reranker 供应商差异，可在 Ollama 本地与云端 provider 间切换（见 ADR 文档）。
+- **分层清晰**：`agent/harness/`（Agent 编排）、`agent/mcp_servers/`（工具边界进程）、`backend/app/api/routes/` + `backend/app/crud/` + `backend/app/models/`（Web/数据访问）、`config/`（配置集中）、`agent/eval/` + `tests/`（评测与测试）边界分明。
+- **配置与密钥分离**：全部走环境变量，`.env.example` 只含占位，`backend/scripts/security_secret_scan.py` 做发布前密钥扫描。
+- **供应商可切换**：`llm_client` + `agent/config/ai_conf.py` 屏蔽 LLM/embedding/reranker 供应商差异，可在 Ollama 本地与云端 provider 间切换（见 ADR 文档）。
 - **安全 HTTP**：`safe_http_client.py` 处理对外抓取，降低 SSRF 类风险。
 
 ## 3. Agent 流程提升
@@ -38,7 +38,7 @@
 ## 5. 可维护性提升
 
 - **职责单一的模块**：harness 每个文件聚焦一个角色/能力，便于定位与替换。
-- **可回归的评测集**：`eval/gold/` 提供 gold 数据与 split，改动后能跑评测对比。
+- **可回归的评测集**：`agent/eval/gold/` 提供 gold 数据与 split，改动后能跑评测对比。
 - **审计/迁移脚本化**：`scripts/` 下的标签提升、回滚、索引重建、PG/Qdrant 同步等都有确定性确认 token（如 `COPY_REVIEWED_LABELS_*` / `ROLLBACK_*`）保护，降低误操作。
 - **文档沉淀**：`docs/` + `docs/adr/` 记录架构决策与设计演进，新成员可顺链路理解系统。
 
@@ -53,4 +53,4 @@
 - `enforce` 模式下回答拦截率与误拦率。
 - 站外证据交叉核验的命中分布（`station_matched` 等占比）。
 
-> 这些指标依赖运行环境与真实语料，应在配置好本地服务（MySQL/Redis/Qdrant/Ollama）并跑通 `eval/` 后补充。
+> 这些指标依赖运行环境与真实语料，应在配置好本地服务（MySQL/Redis/Qdrant/Ollama）并跑通 `agent/eval/` 后补充。

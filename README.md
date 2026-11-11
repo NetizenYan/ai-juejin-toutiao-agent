@@ -10,7 +10,7 @@
 
 ## Agent 架构摘要
 
-- **单 Agent 架构**：在一个 harness 内拆分 intent router、memory ledger、anchor resolver、tool executor、evidence reviewer、validator 等角色（见 `harness/agent_orchestrator.py`）。
+- **单 Agent 架构**：在一个 harness 内拆分 intent router、memory ledger、anchor resolver、tool executor、evidence reviewer、validator 等角色（见 `agent/harness/agent_orchestrator.py`）。
 - **站内 RAG 优先**：用户问题先走站内新闻检索，embedding 召回、hybrid ranking、reranker 精排，再把 evidence pack 交给模型生成。
 - **多轮上下文记忆**：短期记忆、会话摘要、主题 ledger、新闻锚点 ledger 与 evidence carry-over；记忆默认不充当事实证据。
 - **模糊新闻确认**：用户只记得大概时间、媒体或主题时，优先返回候选让用户确认，避免过度自信回答。
@@ -57,24 +57,44 @@ Vue3 + Vant client
 
 ## 主要模块
 
+仓库分成三块：`frontend/`（前端）、`backend/`（新闻站的 Web 后端和数据）、`agent/`（Agent 代码）。所有命令都在仓库根目录执行。
+
 ```text
-apps/frontend/       Vue3 + Vant 前端客户端
-cache/               Redis 缓存 helper
-config/              数据库、缓存、模型、向量库配置
-crud/                业务数据访问层
-data/                示例数据模板
-docs/                架构和设计文档
-eval/                RAG / Agent 评测脚本与 gold 测试集
-harness/             Agent 核心编排层（意图、记忆、锚点、工具、证据、校验）
-mcp_servers/         业务、RAG、Web/OCR MCP server
-models/              SQLAlchemy ORM 模型
-routers/             FastAPI 路由
-schemas/             Pydantic schema
-scripts/             索引、评测、审计、迁移辅助脚本
-sql/                 数据库 schema
-tests/               单元测试和 Agent 合约测试
-utils/               鉴权、安全、通用工具
+frontend/                 Vue3 + Vant 前端客户端
+backend/
+  app/
+    main.py               FastAPI 应用入口（uvicorn backend.app.main:app）
+    api/
+      router.py           汇总全部路由
+      deps.py             依赖注入（当前登录用户）
+      routes/             各业务路由：news、users、favorite、history、ai
+    core/                 应用配置、环境变量加载、Redis 连接、密码加密、统一响应与异常处理
+    db/                   数据库引擎与会话
+    models/               SQLAlchemy ORM 模型
+    schemas/              Pydantic schema
+    crud/                 数据访问层
+    cache/                新闻缓存的读写
+    services/             业务服务（带缓存的新闻查询）
+  data/                   新闻数据：raw/ 原始数据、processed/ 加工后的语料、示例数据模板
+  sql/                    数据库 schema 与初始化数据
+  scripts/                数据导入、语料构建、数据集画像、密钥扫描
+  tests/                  后端接口与数据层测试
+agent/
+  harness/                Agent 核心编排层（意图、记忆、锚点、工具、证据、校验）
+  mcp_servers/            业务、RAG、Web/OCR MCP server
+  config/                 模型、检索、向量库配置
+  eval/  evals/           RAG / Agent 评测脚本、gold 测试集、评委工具
+  scripts/                索引构建、评测、gold 标注流程脚本
+  tests/                  单元测试和 Agent 合约测试
+docs/                     架构和设计文档
 ```
+
+两边的依赖只有两个方向、几处入口：
+
+- `backend` 调用 `agent`：聊天接口 `backend/app/api/routes/ai.py` 调用 `agent.harness.agent.run_chat`；应用关闭时回收 MCP 子进程。
+- `agent` 调用 `backend`：只用数据层（`backend.app.db`、`models`、`crud`）读写新闻和对话记录，不依赖路由层。
+
+详见 [docs/PROJECT_STRUCTURE.md](docs/PROJECT_STRUCTURE.md)。
 
 各 harness 模块的角色职责对照见 [docs/agent-architecture.md](docs/agent-architecture.md) 第 2 节。
 
@@ -102,14 +122,14 @@ cp .env.example .env        # Windows: copy .env.example .env
 
 # 初始化 MySQL：先建业务表和新闻分类，再建 AI 会话表（后者外键引用 user 表）
 # 必须带 --default-character-set=utf8mb4，否则中文会被双重编码成乱码
-mysql --default-character-set=utf8mb4 -u root -p < sql/mysql_schema.sql
-mysql --default-character-set=utf8mb4 -u root -p < sql/seed_categories.sql
-mysql --default-character-set=utf8mb4 -u root -p < scripts/ai_tables.sql
+mysql --default-character-set=utf8mb4 -u root -p < backend/sql/mysql_schema.sql
+mysql --default-character-set=utf8mb4 -u root -p < backend/sql/seed_categories.sql
+mysql --default-character-set=utf8mb4 -u root -p < backend/sql/ai_tables.sql
 
-python -m uvicorn main:app --host 127.0.0.1 --port 8030
+python -m uvicorn backend.app.main:app --host 127.0.0.1 --port 8030
 ```
 
-`sql/seed_categories.sql` 会写入 9 个新闻分类；新闻数据需要另外导入，首页列表才有内容。
+`backend/sql/seed_categories.sql` 会写入 9 个新闻分类；新闻数据需要另外导入，首页列表才有内容。
 
 几个需要按环境调整的配置（详见 `.env.example`）：
 
@@ -132,7 +152,7 @@ http://127.0.0.1:8030/docs
 ### 2. 前端
 
 ```bash
-cd apps/frontend
+cd frontend
 npm install
 copy .env.example .env
 npm run dev
@@ -183,8 +203,8 @@ http://localhost:5173
 ## 测试
 
 ```bash
-python scripts/security_secret_scan.py
-python -m pytest -q
+python backend/scripts/security_secret_scan.py
+python -m pytest backend/tests agent/tests -q
 ```
 
 当前清理后的本地验证结果：
@@ -206,7 +226,7 @@ Secret hygiene check passed.
 - 数据库 dump 或 Qdrant dump。
 - 本地日志、测试报告、截图、OCR 工作目录。
 
-本项目已经把这些内容加入 `.gitignore`，并提供 `scripts/security_secret_scan.py` 做发布前检查。
+本项目已经把这些内容加入 `.gitignore`，并提供 `backend/scripts/security_secret_scan.py` 做发布前检查。
 
 ## 项目声明
 
