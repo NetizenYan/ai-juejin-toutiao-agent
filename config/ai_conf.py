@@ -161,6 +161,10 @@ class AISettings:
     )
     answer_rewrite_on_fail: bool = _bool("ANSWER_REWRITE_ON_FAIL", True)
     answer_max_rewrite_attempts: int = _int("ANSWER_MAX_REWRITE_ATTEMPTS", 1)
+    # One yes/no call to the answer model: did this reply go along with a request the rules forbid? Only on replies
+    # that do not open with a refusal, to messages that ask no question and touch the rules (harness/assent_check.py).
+    assent_check_enabled: bool = _bool("ASSENT_CHECK_ENABLED", True)
+    assent_check_timeout_seconds: int = _int("ASSENT_CHECK_TIMEOUT_SECONDS", 30)
     answer_thinking_event_enabled: bool = _bool("ANSWER_THINKING_EVENT_ENABLED", False)
     answer_validation_done_field_enabled: bool = _bool("ANSWER_VALIDATION_DONE_FIELD_ENABLED", True)
     answer_validation_done_detail_level: str = os.getenv("ANSWER_VALIDATION_DONE_DETAIL_LEVEL", "summary")

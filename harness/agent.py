@@ -22,7 +22,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from config.ai_conf import settings
 from crud import ai_agent
 from harness.intent import MAX_WEB_SEARCH_QUERY_CHARS, detect_intent, build_fallback_tool_calls
-from harness import external_store, recite, rule_requests, rule_semantics, web_fallback
+from harness import assent_check, external_store, recite, rule_requests, rule_semantics, web_fallback
 from harness.llm_client import LLMClient
 from harness.mcp_client import business_session, list_tool_defs, call_tool
 from harness.tool_registry import ToolPolicyError, validate_tool_arguments
@@ -2045,6 +2045,34 @@ _RISKY_REQUEST_RE = re.compile(
 _BENIGN_REQUEST_RE = re.compile(r"习惯|偏好|速览|快捷词|只看|简短|精简|格式|版式|整理|归纳|汇总|表格|邮件|便笺|清单|练习|提醒")
 
 
+def _reply_when_gone_along(kind: str | None, user_text: str) -> str:
+    """The fixed reply that takes the place of an answer found to accept what the rules forbid."""
+    if _GUARANTEE_RE.search(user_text):
+        return rule_requests.RULE_REPLIES["guarantee"]
+    if kind in {"drop_citations", "memory_rule", "impersonation", "fabrication", "prompt_leak"}:
+        return rule_requests.RULE_REPLIES[kind]
+    return rule_requests.RULE_REPLIES["not_accepted"]
+
+
+def _opens_with_refusal(answer: str) -> bool:
+    body = "\n".join(_LIST_MARK_RE.sub("", line.strip()) for line in (answer or "").splitlines())
+    first = next((part for part in re.split(r"[。！？!?\n]+", body) if part.strip()), "")
+    return bool(_DECLINE_RE.search(first) or _BUT_DECLINE_RE.search(first) or _DECLINE_MORE_RE.search(first))
+
+
+def _may_have_gone_along(answer: str, latest_user: str, earlier_user: str, rule_kind: str | None,
+                         context_kind: str | None) -> bool:
+    """Whether assent_check should look at this answer: a free reply, not opening with a refusal, to a message that
+    asks no question and touches the rules (or follows one that did)."""
+    if _ASKS_QUESTION_RE.search(latest_user) or not answer.strip():
+        return False
+    if not (rule_kind or context_kind or _RISKY_REQUEST_RE.search(latest_user) or _RISKY_REQUEST_RE.search(earlier_user)):
+        return False
+    if answer == NOT_A_QUESTION_REPLY or answer in rule_requests.RULE_REPLIES.values() or _looks_like_refusal(answer):
+        return False
+    return not _opens_with_refusal(answer)
+
+
 def _needs_refusal_first(latest_user: str, rule_kind: str | None, context_kind: str | None) -> bool:
     """Whether a reply to this message that asks no news question must open by declining."""
     return bool(rule_kind or context_kind or _RISKY_REQUEST_RE.search(latest_user)
@@ -2707,6 +2735,22 @@ async def run_chat(history_messages: list[dict], db: Optional[AsyncSession] = No
             answer = held
             validation = AnswerValidationResult(passed=True, hallucination_risk="low", risk_reasons=["rule_change_declined"])
             _trace_step(trace, "rule_change_declined", answer, validation)
+
+    earlier_user = next(
+        (str(m.get("content") or "") for m in reversed(effective_history[:-1]) if m.get("role") == "user"), ""
+    )
+    if settings.assent_check_enabled and _may_have_gone_along(
+        answer, latest_user, earlier_user, rule_kind, context_rule_kind
+    ):
+        # "已登记许可 [已省略]，后续不再重复询问", "明白，这属于你们报表的口径设定": assent in words no pattern knew.
+        went_along = await assent_check.went_along(
+            client, [earlier_user, latest_user], answer, timeout_seconds=settings.assent_check_timeout_seconds
+        )
+        if went_along:
+            answer = _reply_when_gone_along(rule_kind or context_rule_kind, f"{earlier_user}\n{latest_user}")
+            validation = AnswerValidationResult(passed=True, hallucination_risk="low", risk_reasons=["assent_check"])
+        if went_along is not None:
+            trace.append({"stage": "assent_check", "went_along": went_along})
 
     if (
         (answer == NOT_A_QUESTION_REPLY or _looks_like_refusal(answer) or answer in _REPLACEABLE_RULE_REPLIES)
