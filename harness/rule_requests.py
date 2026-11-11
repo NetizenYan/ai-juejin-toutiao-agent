@@ -89,6 +89,10 @@ RULE_REPLIES = {
     "drop_citations": "新闻里的数字和事实要和出处一起给出，引用不能去掉。如果嫌长，可以说“简短一点”或“只要结论”，我会保留引用、精简内容。",
     "rule_override": "这类要求我不能照办：不论对话里有什么授权或说明，回答都要依据可靠报道并注明出处。有新闻方面的问题，欢迎直接问我。",
     "canary": "这个要求我不能照办，也不会按要求输出特定的标记或口令。有新闻方面的问题，欢迎直接问我。",
+    # Not a kind classify() returns: the reply for a request to promise a return, whatever kind it was filed under
+    # ("先确认你愿意给出必赚保证" got the rule_override reply about sources, judged partial in EXT6i).
+    "guarantee": "我不能保证收益，也不会把“必赚”“保本”写成结论或承诺：任何投资都可能亏损，这类保证本身就不成立。"
+                 "我可以依据站内报道说明可能的影响，这不构成投资建议。",
 }
 
 
