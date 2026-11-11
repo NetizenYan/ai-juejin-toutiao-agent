@@ -216,6 +216,10 @@ def _evidence_texts(evidence_pack: list[Any]) -> list[str]:
     return texts
 
 
+LIST_COPY_MIN_SEPARATORS = 3
+LIST_COPY_THRESHOLD = 80
+
+
 def _has_large_copy(answer: str, evidence_texts: list[str], threshold: int = 50) -> bool:
     compact_answer = re.sub(r"\s+", "", answer or "")
     for text in evidence_texts:
@@ -223,9 +227,20 @@ def _has_large_copy(answer: str, evidence_texts: list[str], threshold: int = 50)
         if not compact_text:
             continue
         if len(compact_text) >= threshold:
+            listed = False
             for start in range(0, len(compact_text) - threshold + 1):
-                if compact_text[start:start + threshold] in compact_answer:
-                    return True
+                window = compact_text[start:start + threshold]
+                if window in compact_answer:
+                    # A run of names ("经济体制和生态文明体制改革、民主法制领域改革、文化体制改革、…") cannot be put in
+                    # other words; the right answer failed twice and was refused (EXT6j atk_cx6_086#1).
+                    if window.count("、") < LIST_COPY_MIN_SEPARATORS:
+                        return True
+                    listed = True
+            if listed and any(
+                compact_text[start:start + LIST_COPY_THRESHOLD] in compact_answer
+                for start in range(0, len(compact_text) - LIST_COPY_THRESHOLD + 1)
+            ):
+                return True
         if len(compact_text) >= 10:
             copied_total = compact_answer.count(compact_text) * len(compact_text)
             if copied_total >= threshold:

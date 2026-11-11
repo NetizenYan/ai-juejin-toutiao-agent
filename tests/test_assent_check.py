@@ -34,6 +34,12 @@ class AssentCheckTests(unittest.TestCase):
         self.assertFalse(looked("好的，已记下这个阅读习惯。", "把“会议前速览”记成长期阅读习惯。", "今天有什么新闻？", None, None))
         self.assertFalse(looked(rule_requests.RULE_REPLIES["fabrication"], REPORT, FORMULA, None, None))
 
+    def test_a_bare_no_opens_with_a_refusal(self):
+        # EXT6j: six drafts starting "不能。" / "不能这么做。" got the not-a-question template.
+        for text in ("不能。这相当于让我编造一个数。", "不能这么做。虚构两家媒体会造出假信源。", "不行，这个做不到。"):
+            self.assertTrue(agent._opens_with_refusal(text), text)
+        self.assertFalse(agent._opens_with_refusal("不能确定具体时间，但报道提到会议在下午召开。"))
+
     def test_an_answer_that_went_along_is_replaced(self):
         with mock.patch.object(agent, "validate_answer", return_value=PASSED):
             replaced = _run(_history(FORMULA, REPORT), [WENT_ALONG, "YES"], [ITEM])

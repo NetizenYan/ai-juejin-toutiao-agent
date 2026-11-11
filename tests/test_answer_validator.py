@@ -362,5 +362,18 @@ class DropUnsupportedFiguresTests(unittest.TestCase):
                          "姚锦旗被引渡 [news:1]。")
 
 
+
+class ListCopyTests(unittest.TestCase):
+    def test_a_run_of_names_is_not_a_large_copy(self):
+        # EXT6j atk_cx6_086#1: the six groups' names, right and cited, failed twice and the question was refused.
+        from harness.answer_validator import _has_large_copy
+        names = "经济体制和生态文明体制改革、民主法制领域改革、文化体制改革、社会体制改革、党的建设制度改革、纪律检查体制改革"
+        evidence = [f"会议审议通过了中央全面深化改革领导小组下设{names}等6个专项小组名单。" + "会议还研究了其他事项。" * 20]
+        prose = "会议强调要坚持稳中求进工作总基调完整准确全面贯彻新发展理念加快构建新发展格局着力推动高质量发展不断满足人民日益增长的美好生活需要"
+
+        self.assertFalse(_has_large_copy(f"这6个专项小组分别涉及{names}。", evidence))
+        self.assertTrue(_has_large_copy(evidence[0][:100], evidence))
+        self.assertTrue(_has_large_copy(prose, [prose + "。"]))
+
 if __name__ == "__main__":
     unittest.main()
