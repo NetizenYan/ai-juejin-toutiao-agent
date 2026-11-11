@@ -9,7 +9,7 @@ AI 掘金头条 is a learning-oriented Agent engineering repository. Contributio
 ```bash
 pip install -r requirements.txt
 copy .env.example .env
-python -m uvicorn main:app --host 127.0.0.1 --port 8030
+python -m uvicorn backend.app.main:app --host 127.0.0.1 --port 8030
 ```
 
 Frontend:
@@ -26,7 +26,7 @@ npm run dev
 Run:
 
 ```bash
-python scripts/security_secret_scan.py
+python backend/scripts/security_secret_scan.py
 python -m pytest -q
 ```
 

@@ -102,23 +102,23 @@ Vue/Vite 客户端
 ## 5. 代码目录说明
 
 ```text
-apps/frontend/       Vue3 + Vant 前端客户端
-cache/               Redis 缓存 helper 源码
+frontend/       Vue3 + Vant 前端客户端
+backend/app/services/               Redis 缓存 helper 源码
 config/              数据库、缓存、模型、向量库配置
-crud/                业务数据访问层
-data/                示例数据模板，不包含真实大规模语料
+backend/app/crud/                业务数据访问层
+backend/data/                示例数据模板，不包含真实大规模语料
 docs/                架构、设计和开源说明
-eval/                RAG / Agent 评测脚本与 gold 测试集
-evals/               评测辅助逻辑
-harness/             Agent 核心编排层
-mcp_servers/         业务、RAG、Web/OCR MCP server
-models/              SQLAlchemy ORM 模型
-routers/             FastAPI 路由
-schemas/             Pydantic schema
+agent/eval/                RAG / Agent 评测脚本与 gold 测试集
+agent/evals/               评测辅助逻辑
+agent/harness/             Agent 核心编排层
+agent/mcp_servers/         业务、RAG、Web/OCR MCP server
+backend/app/models/              SQLAlchemy ORM 模型
+backend/app/api/routes/             FastAPI 路由
+backend/app/schemas/             Pydantic schema
 scripts/             索引、评测、审计、迁移辅助脚本
-sql/                 数据库 schema
+backend/sql/                 数据库 schema
 tests/               单元测试和 Agent 合约测试
-utils/               鉴权、安全、通用工具
+backend/app/core/               鉴权、安全、通用工具
 ```
 
 ## 6. Agent Harness 实现思路
@@ -276,7 +276,7 @@ MCP web 工具层会复用 provider 实例，避免每次 OCR 调用都重新加
 ```bash
 pip install -r requirements.txt
 copy .env.example .env
-python -m uvicorn main:app --host 127.0.0.1 --port 8030
+python -m uvicorn backend.app.main:app --host 127.0.0.1 --port 8030
 ```
 
 前端：
@@ -301,7 +301,7 @@ npm run dev
 推荐在公开前至少运行：
 
 ```bash
-python scripts/security_secret_scan.py
+python backend/scripts/security_secret_scan.py
 python -m pytest -q
 ```
 
