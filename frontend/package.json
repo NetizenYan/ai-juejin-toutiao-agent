@@ -14,7 +14,7 @@
     "marked": "^16.3.0",
     "pinia": "^3.0.3",
     "pinia-plugin-persistedstate": "^4.5.0",
-    "vant": "^4.9.21",
+    "vant": "^4.10.2",
     "vue-i18n": "^11.4.16",
     "vue-router": "^4.5.1"
   },
